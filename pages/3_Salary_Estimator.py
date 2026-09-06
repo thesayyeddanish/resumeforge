@@ -1,10 +1,12 @@
 import streamlit as st
 
 from utils.styling import inject_css, hero, score_box
+from utils.state import init_state
 from utils.ai_client import estimate_salary
 
 st.set_page_config(page_title="Salary Estimator • ResumeForge AI", page_icon="💰", layout="wide")
 inject_css()
+init_state()
 hero("💰 Salary Range Estimator", "A modeled estimate based on role, company, and location — always verify against live market data before negotiating.")
 
 c1, c2 = st.columns(2)

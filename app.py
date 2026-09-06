@@ -1,6 +1,7 @@
 import streamlit as st
 
 from utils.styling import inject_css, hero
+from utils.state import init_state
 
 st.set_page_config(
     page_title="ResumeForge AI",
@@ -10,25 +11,7 @@ st.set_page_config(
 )
 
 inject_css()
-
-# --- Global session state (shared across all pages) -------------------------
-defaults = {
-    "resume_filename": None,
-    "resume_bytes": None,
-    "parsed_resume": None,       # utils.parsers.ParsedResume
-    "job_listing": None,         # utils.job_intel.JobListing
-    "job_keywords": [],
-    "analytics_before": None,    # utils.ats_scorer.AnalyticsReport
-    "analytics_after": None,
-    "gap_analysis": None,
-    "section_feedback": None,
-    "rewritten_bullets": None,
-    "cover_letter_text": None,
-    "salary_estimate": None,
-}
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+init_state()
 
 hero(
     "🧠 ResumeForge AI",

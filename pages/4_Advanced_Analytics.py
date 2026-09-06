@@ -1,10 +1,12 @@
 import streamlit as st
 
 from utils.styling import inject_css, hero, score_box, pill
+from utils.state import init_state
 from utils.ats_scorer import run_full_analysis
 
 st.set_page_config(page_title="Advanced Analytics • ResumeForge AI", page_icon="📊", layout="wide")
 inject_css()
+init_state()
 hero("📊 Advanced Analytics", "A full diagnostic pass on your resume — the same checks recruiters' ATS systems run before a human ever sees it.")
 
 if not st.session_state.get("parsed_resume"):

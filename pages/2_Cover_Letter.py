@@ -1,11 +1,13 @@
 import streamlit as st
 
 from utils.styling import inject_css, hero
+from utils.state import init_state
 from utils.ai_client import generate_cover_letter
 from utils.exporter import text_to_docx, text_to_pdf
 
 st.set_page_config(page_title="Cover Letter • ResumeForge AI", page_icon="✉️", layout="wide")
 inject_css()
+init_state()
 hero("✉️ Tailored Cover Letter Generator", "A clean, 3-paragraph cover letter matched to the company's tone — grounded only in your real experience.")
 
 if not st.session_state.get("parsed_resume"):

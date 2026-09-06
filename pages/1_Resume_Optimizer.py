@@ -1,6 +1,7 @@
 import streamlit as st
 
 from utils.styling import inject_css, hero, score_box, pill
+from utils.state import init_state
 from utils.parsers import parse_resume
 from utils.job_intel import fetch_job_from_url, build_job_listing_from_text, extract_keywords
 from utils.ats_scorer import run_full_analysis
@@ -9,6 +10,7 @@ from utils.exporter import text_to_docx, text_to_pdf
 
 st.set_page_config(page_title="Resume Optimizer • ResumeForge AI", page_icon="📄", layout="wide")
 inject_css()
+init_state()
 hero("📄 Resume Optimizer", "Upload your resume, target a job, and see exactly what to fix before you apply.")
 
 # --- Step 1: Upload resume ----------------------------------------------------
