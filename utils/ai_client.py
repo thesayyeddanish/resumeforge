@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
 
 import streamlit as st
-from anthropic import Anthropic
+from google import genai
+from google.genai import types
 
-MODEL_DEFAULT = "claude-sonnet-4-6"
+MODEL_DEFAULT = "gemini-flash-latest"  # Google alias that auto-resolves to the newest free-tier Flash model
 
 TRUTH_GUARDRAIL = """
 CRITICAL GROUND RULE — TRUTH GUARDRAIL:
@@ -38,29 +38,32 @@ to under-claim than to fabricate.
 """
 
 
-def _get_client() -> Anthropic:
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY"))
+def _get_client() -> genai.Client:
+    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
     if not api_key:
         raise RuntimeError(
-            "No ANTHROPIC_API_KEY found. Add it to .streamlit/secrets.toml locally, "
-            "or in your Streamlit Cloud app's Settings > Secrets."
+            "No GEMINI_API_KEY found. Add it to .streamlit/secrets.toml locally, "
+            "or in your Streamlit Cloud app's Settings > Secrets. "
+            "Get a free key at https://aistudio.google.com/apikey"
         )
-    return Anthropic(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 def _model() -> str:
-    return st.secrets.get("CLAUDE_MODEL", MODEL_DEFAULT)
+    return st.secrets.get("GEMINI_MODEL", MODEL_DEFAULT)
 
 
 def _call(system: str, user: str, max_tokens: int = 2000) -> str:
     client = _get_client()
-    resp = client.messages.create(
+    resp = client.models.generate_content(
         model=_model(),
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        contents=user,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=max_tokens,
+        ),
     )
-    return "".join(block.text for block in resp.content if block.type == "text")
+    return resp.text or ""
 
 
 def _call_json(system: str, user: str, max_tokens: int = 2000) -> dict:
