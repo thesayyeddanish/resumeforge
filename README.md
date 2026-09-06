@@ -90,21 +90,25 @@ key**. Only `secrets_example.toml` should go to GitHub.
    and paste in:
    ```toml
    GROQ_API_KEY = "gsk_your-real-key"
-   GROQ_MODEL = "llama-3.3-70b-versatile"
+   GROQ_MODEL = "openai/gpt-oss-120b"
    ```
 4. Deploy. Streamlit Cloud will install `requirements.txt` automatically.
 
 ## Notes & honest limitations (read this before you ship it)
 
-- **This app runs on Groq's free tier** (`llama-3.3-70b-versatile`) by
+- **This app runs on Groq's free tier** (`openai/gpt-oss-120b`) by
   default — no billing account needed. Free tier limits are roughly
-  30 requests/minute and ~14,400 requests/day on this model, which is
-  plenty for personal use and demos. (We switched from Google's Gemini
-  free tier after Google's newly-issued "AQ."-prefix API keys hit an
-  ongoing, unresolved authentication bug on their generateContent
-  endpoint — see https://discuss.ai.google.dev if curious. If Google
-  fixes that and you'd rather use Gemini, swapping `utils/ai_client.py`
-  back is a contained change.)
+  30 requests/minute with a daily token cap, which is plenty for
+  personal use and demos. **Heads up: Groq periodically retires model
+  names** (it happened to `llama-3.3-70b-versatile`, which this app
+  used until August 2026). If a feature suddenly errors with
+  `model_not_found`, check https://console.groq.com/docs/models for
+  the current lineup and update `GROQ_MODEL` in your secrets — no code
+  change needed, since the app reads the model name from there.
+  (We originally built this on Google's Gemini free tier, but switched
+  after Google's newly-issued "AQ."-prefix API keys hit an ongoing,
+  unresolved authentication bug on their generateContent endpoint —
+  see https://discuss.ai.google.dev if curious.)
 - **Salary Estimator** uses the LLM's general knowledge to *model* a
   range — it is not pulling live data from Glassdoor/Levels.fyi (no
   free public API exists for that). The app clearly labels this as an
