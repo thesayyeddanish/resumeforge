@@ -15,10 +15,9 @@ import json
 import os
 
 import streamlit as st
-from google import genai
-from google.genai import types
+from groq import Groq
 
-MODEL_DEFAULT = "gemini-flash-latest"  # Google alias that auto-resolves to the newest free-tier Flash model
+MODEL_DEFAULT = "llama-3.3-70b-versatile"  # Groq's free-tier general-purpose model
 
 TRUTH_GUARDRAIL = """
 CRITICAL GROUND RULE — TRUTH GUARDRAIL:
@@ -38,32 +37,32 @@ to under-claim than to fabricate.
 """
 
 
-def _get_client() -> genai.Client:
-    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
+def _get_client() -> Groq:
+    api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY"))
     if not api_key:
         raise RuntimeError(
-            "No GEMINI_API_KEY found. Add it to .streamlit/secrets.toml locally, "
+            "No GROQ_API_KEY found. Add it to .streamlit/secrets.toml locally, "
             "or in your Streamlit Cloud app's Settings > Secrets. "
-            "Get a free key at https://aistudio.google.com/apikey"
+            "Get a free key at https://console.groq.com/keys"
         )
-    return genai.Client(api_key=api_key)
+    return Groq(api_key=api_key)
 
 
 def _model() -> str:
-    return st.secrets.get("GEMINI_MODEL", MODEL_DEFAULT)
+    return st.secrets.get("GROQ_MODEL", MODEL_DEFAULT)
 
 
 def _call(system: str, user: str, max_tokens: int = 2000) -> str:
     client = _get_client()
-    resp = client.models.generate_content(
+    resp = client.chat.completions.create(
         model=_model(),
-        contents=user,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            max_output_tokens=max_tokens,
-        ),
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
     )
-    return resp.text or ""
+    return resp.choices[0].message.content or ""
 
 
 def _call_json(system: str, user: str, max_tokens: int = 2000) -> dict:
