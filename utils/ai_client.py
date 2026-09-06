@@ -17,7 +17,7 @@ import os
 import streamlit as st
 from groq import Groq
 
-MODEL_DEFAULT = "llama-3.3-70b-versatile"  # Groq's free-tier general-purpose model
+MODEL_DEFAULT = "openai/gpt-oss-120b"  # Groq's current free-tier general-purpose model
 
 TRUTH_GUARDRAIL = """
 CRITICAL GROUND RULE — TRUTH GUARDRAIL:
