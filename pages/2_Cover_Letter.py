@@ -1,43 +1,65 @@
 import streamlit as st
 
-from utils.styling import inject_css, hero, score_box
-from utils.ai_client import estimate_salary
+from utils.styling import inject_css, hero
+from utils.ai_client import generate_cover_letter
+from utils.exporter import text_to_docx, text_to_pdf
 
-st.set_page_config(page_title="Salary Estimator • ResumeForge AI", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Cover Letter • ResumeForge AI", page_icon="✉️", layout="wide")
 inject_css()
-hero("💰 Salary Range Estimator", "A modeled estimate based on role, company, and location — always verify against live market data before negotiating.")
+hero("✉️ Tailored Cover Letter Generator", "A clean, 3-paragraph cover letter matched to the company's tone — grounded only in your real experience.")
 
+if not st.session_state.get("parsed_resume"):
+    st.warning("Upload a resume on the **Resume Optimizer** page first.")
+    st.stop()
+
+job_listing = st.session_state.get("job_listing")
+job_text_default = job_listing.raw_text if job_listing else ""
+company_default = job_listing.company if job_listing else ""
+
+st.markdown("### Details")
 c1, c2 = st.columns(2)
 with c1:
-    job_title = st.text_input("Target job title", placeholder="e.g. Senior Product Manager")
-    location = st.text_input("Location", placeholder="e.g. Bangalore, India / Remote-US")
+    company = st.text_input("Target company", value=company_default)
 with c2:
-    company = st.text_input("Company name", placeholder="e.g. Google, or a startup name")
-    years_exp = st.text_input("Years of experience", placeholder="e.g. 5")
+    tone = st.selectbox("Tone", ["Professional", "Warm & personable", "Confident & direct", "Startup-casual", "Formal/corporate"])
 
-if st.button("💰 Estimate Salary Range", use_container_width=False):
-    if not job_title.strip():
-        st.warning("Enter at least a job title.")
+job_text = st.text_area("Job description (auto-filled if set on Resume Optimizer page)", value=job_text_default, height=200)
+
+if st.button("✍️ Generate Cover Letter", use_container_width=False):
+    if not job_text.strip():
+        st.warning("Paste a job description first — the letter needs something to tailor to.")
     else:
-        with st.spinner("Modeling a salary range..."):
+        with st.spinner("Drafting your cover letter..."):
             try:
-                st.session_state.salary_estimate = estimate_salary(job_title, company, location, years_exp)
+                letter = generate_cover_letter(
+                    st.session_state.parsed_resume.raw_text,
+                    job_text,
+                    company,
+                    tone.lower(),
+                )
+                st.session_state.cover_letter_text = letter
             except Exception as e:
-                st.error(f"Couldn't estimate salary: {e}")
+                st.error(f"Couldn't generate cover letter: {e}")
 
-if st.session_state.get("salary_estimate"):
-    est = st.session_state.salary_estimate
-    st.markdown(
-        f"""<div class="rf-score-wrap">
-        {score_box("Low", est.get('low_estimate','—'), "#FF6B6B")}
-        {score_box("Mid", est.get('mid_estimate','—'), "#6C5CE7")}
-        {score_box("High", est.get('high_estimate','—'), "#00B894")}
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    st.markdown(f"""<div class="rf-card"><h3>Reasoning</h3><p>{est.get('reasoning','')}</p>
-    <p><b>Confidence:</b> {est.get('confidence','—').title()}</p>
-    <p style="color:#6B7280; font-size:0.85rem;">{est.get('currency_note','')}</p>
-    </div>""", unsafe_allow_html=True)
-    st.warning(f"⚠️ {est.get('disclaimer', 'This is a modeled estimate, not live market data.')}")
-    st.caption("For live data, cross-check with Levels.fyi, Glassdoor, Payscale, or Blind before negotiating.")
+if st.session_state.get("cover_letter_text"):
+    st.markdown("### Your Cover Letter")
+    edited = st.text_area("Edit if needed", value=st.session_state.cover_letter_text, height=350, key="cl_edit")
+    st.session_state.cover_letter_text = edited
+
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        st.download_button(
+            "⬇️ Download as DOCX",
+            data=text_to_docx("Cover Letter", edited),
+            file_name="cover_letter.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
+    with dl2:
+        st.download_button(
+            "⬇️ Download as PDF",
+            data=text_to_pdf("Cover Letter", edited),
+            file_name="cover_letter.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
