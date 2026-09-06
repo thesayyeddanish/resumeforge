@@ -53,9 +53,9 @@ source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Copy the secrets template and add your **free Gemini API key**
-(get one at https://aistudio.google.com/apikey — no billing required,
-just sign in with a Google account):
+Copy the secrets template and add your **free Groq API key**
+(get one at https://console.groq.com/keys — no billing required,
+just create a free account):
 
 ```bash
 cp .streamlit/secrets_example.toml .streamlit/secrets.toml
@@ -89,21 +89,22 @@ key**. Only `secrets_example.toml` should go to GitHub.
 3. Before (or after) deploying, go to **Settings → Secrets** on the app
    and paste in:
    ```toml
-   GEMINI_API_KEY = "AIzaSy-your-real-key"
-   GEMINI_MODEL = "gemini-flash-latest"
+   GROQ_API_KEY = "gsk_your-real-key"
+   GROQ_MODEL = "llama-3.3-70b-versatile"
    ```
 4. Deploy. Streamlit Cloud will install `requirements.txt` automatically.
 
 ## Notes & honest limitations (read this before you ship it)
 
-- **This app runs on Google's free Gemini API tier** (`gemini-flash-latest`)
-  by default — no billing account needed to get started. Free tier limits
-  are modest (a handful of requests per minute, capped requests per day,
-  reset at midnight Pacific time) and enforced per Google Cloud project,
-  not per API key. Fine for personal use and demos; if you outgrow it,
-  enabling billing on that same project removes the free tier entirely —
-  Google recommends a **separate project** if you want to keep a free
-  tier around for testing while a billed one runs in production.
+- **This app runs on Groq's free tier** (`llama-3.3-70b-versatile`) by
+  default — no billing account needed. Free tier limits are roughly
+  30 requests/minute and ~14,400 requests/day on this model, which is
+  plenty for personal use and demos. (We switched from Google's Gemini
+  free tier after Google's newly-issued "AQ."-prefix API keys hit an
+  ongoing, unresolved authentication bug on their generateContent
+  endpoint — see https://discuss.ai.google.dev if curious. If Google
+  fixes that and you'd rather use Gemini, swapping `utils/ai_client.py`
+  back is a contained change.)
 - **Salary Estimator** uses the LLM's general knowledge to *model* a
   range — it is not pulling live data from Glassdoor/Levels.fyi (no
   free public API exists for that). The app clearly labels this as an
