@@ -92,8 +92,11 @@ JOB DESCRIPTION:
 
 Return JSON with this exact shape:
 {{
+  "matched_keywords": ["keywords/skills from the job description that ARE genuinely evidenced in the resume"],
   "missing_keywords": ["..."],
+  "matched_technical_skills": ["..."],
   "missing_technical_skills": ["..."],
+  "matched_industry_terms": ["..."],
   "missing_industry_terms": ["..."],
   "alignment_score_0_to_100": 0,
   "compatibility_summary": "2-3 sentence honest assessment",
@@ -128,16 +131,28 @@ If a section is missing from the resume, say so in "cons" and leave "pros" empty
 
 
 # ---------------------------------------------------------------------------
-# STAR bullet rewriting
+# Bullet rewriting -- formal ATS phrasing, no STAR/S-T-A-R labels in output
 # ---------------------------------------------------------------------------
 
-def rewrite_bullets_star(bullets: list[str], job_text: str = "") -> list[dict]:
-    system = f"""You rewrite resume bullets using the STAR method
-(Situation, Task, Action, Result) while staying 100% truthful.
+def rewrite_bullets(bullets: list[str], job_text: str = "") -> list[dict]:
+    """Tighten resume bullets into strong, formal, ATS-style phrasing.
+
+    Internally this follows Situation/Task/Action/Result logic to decide
+    what to emphasize, but the OUTPUT never mentions those words -- it's
+    just a clean, professional bullet line, like a well-written resume
+    already reads.
+    """
+    system = f"""You are a senior resume writer. You tighten resume bullets
+into strong, formal, ATS-friendly phrasing (clear scope, strong action
+verb, outcome-oriented) while staying 100% truthful.
 {TRUTH_GUARDRAIL}
-If the original bullet has no measurable result, do NOT invent one —
-instead sharpen the action verb and scope, and flag that a metric
-should be added by the candidate."""
+Do NOT use or output the words "Situation", "Task", "Action", "Result",
+or "STAR" anywhere -- just produce a normal, polished resume bullet.
+If the original bullet has no measurable outcome, do NOT invent one --
+instead sharpen the action verb and scope, and in "metric_template"
+give a safe fill-in-the-blank pattern (e.g. "by [X]%", "for a team of
+[X]", "saving $[X] annually") the candidate can complete with their
+own real number. Never fill in a plausible-looking number yourself."""
 
     user = f"""Rewrite each bullet below. Target role context (optional): {job_text[:2000]}
 
@@ -145,7 +160,7 @@ BULLETS:
 {json.dumps(bullets)}
 
 Return JSON: a list of objects, one per input bullet, in the same order:
-[{{"original": "...", "rewritten": "...", "note": "short note, e.g. 'tightened action verb' or 'add a metric here if you have one'"}}]"""
+[{{"original": "...", "rewritten": "...", "metric_template": "a bracketed fill-in-the-blank suggestion, or empty string if the bullet is already quantified"}}]"""
     result = _call_json(system, user, max_tokens=3000)
     return result if isinstance(result, list) else result.get("bullets", [])
 

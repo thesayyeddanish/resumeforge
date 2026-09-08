@@ -1,15 +1,17 @@
 """Deterministic, rule-based ATS analysis.
 
-This intentionally does NOT call the LLM — these are checks that are
-cheap, explainable, and fast to run on every keystroke. The AI layer
-(ai_client.py) is reserved for the fuzzier semantic work: gap analysis,
-rewriting, and tone.
+No LLM calls here -- fast, free, explainable. The AI layer (ai_client.py)
+handles the fuzzier semantic work. Every check returns a 1-10 rating
+plus a `data` dict with whatever rich detail its page needs to render
+(actual misspelled words, actual pronoun sentences, actual weak
+bullets -- never just a pass/fail label).
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from statistics import mean
 
 import textstat
 from spellchecker import SpellChecker
@@ -17,7 +19,6 @@ from spellchecker import SpellChecker
 from utils.parsers import ParsedResume
 
 PRONOUNS = {"i", "me", "my", "mine", "myself"}
-
 ESSENTIAL_SECTIONS = ["summary", "experience", "education", "skills"]
 
 _spell = SpellChecker(distance=1)
@@ -26,95 +27,84 @@ _spell = SpellChecker(distance=1)
 @dataclass
 class CheckResult:
     name: str
-    status: str  # "pass" | "warn" | "fail"
-    detail: str
-    score_impact: int = 0  # points out of 100 this check contributes
+    rating: int  # 1-10
+    summary: str
+    data: dict = field(default_factory=dict)
 
 
 @dataclass
 class AnalyticsReport:
-    overall_score: int
+    overall_score: int  # 0-100, for comparability with "ATS score" language elsewhere
     checks: list[CheckResult] = field(default_factory=list)
     matched_keywords: list[str] = field(default_factory=list)
     missing_keywords: list[str] = field(default_factory=list)
     quantified_bullet_ratio: float = 0.0
+    weak_bullets: list[str] = field(default_factory=list)
 
 
 def _check_contact_info(resume: ParsedResume) -> CheckResult:
-    missing = []
-    if not resume.email:
-        missing.append("email")
-    if not resume.phone:
-        missing.append("phone number")
-    if not resume.linkedin:
-        missing.append("LinkedIn URL")
-
-    if not missing:
-        return CheckResult("Contact Information", "pass", "Email, phone, and LinkedIn all detected.", 8)
-    if len(missing) <= 1:
-        return CheckResult("Contact Information", "warn", f"Missing: {', '.join(missing)}.", 4)
-    return CheckResult("Contact Information", "fail", f"Missing: {', '.join(missing)}.", 0)
+    fields = {"Email": bool(resume.email), "Phone": bool(resume.phone), "LinkedIn": bool(resume.linkedin)}
+    count = sum(fields.values())
+    rating = {3: 10, 2: 6, 1: 3, 0: 1}[count]
+    missing = [k for k, v in fields.items() if not v]
+    summary = "All key contact fields found." if not missing else f"Missing: {', '.join(missing)}."
+    return CheckResult("Contact Information", rating, summary, {"fields": fields})
 
 
 def _check_spelling_grammar(text: str) -> CheckResult:
     words = re.findall(r"[A-Za-z]+", text)
-    # Filter out short tokens / likely acronyms / proper nouns (all-caps)
     candidates = [w for w in words if len(w) > 3 and not w.isupper()]
-    unknown = _spell.unknown([w.lower() for w in candidates])
-    # Ignore very short unknown lists — likely names/brands, not typos
+    unknown = sorted(_spell.unknown([w.lower() for w in candidates]))
     error_rate = len(unknown) / max(len(candidates), 1)
 
     if error_rate < 0.01:
-        return CheckResult("Spelling & Grammar", "pass", "No significant spelling issues detected.", 10)
-    if error_rate < 0.03:
-        return CheckResult(
-            "Spelling & Grammar", "warn",
-            f"~{len(unknown)} possibly misspelled words found — review before submitting.", 6,
-        )
-    return CheckResult(
-        "Spelling & Grammar", "fail",
-        f"~{len(unknown)} possibly misspelled words found. This is a common ATS/recruiter red flag.", 2,
-    )
+        rating = 10
+    elif error_rate < 0.02:
+        rating = 8
+    elif error_rate < 0.035:
+        rating = 6
+    elif error_rate < 0.05:
+        rating = 4
+    else:
+        rating = 2
+
+    summary = "No significant spelling issues detected." if not unknown else f"{len(unknown)} possibly misspelled word(s) found."
+    return CheckResult("Spelling & Grammar", rating, summary, {"misspelled": unknown[:25]})
 
 
 def _check_personal_pronouns(text: str) -> CheckResult:
-    words = re.findall(r"[A-Za-z']+", text.lower())
-    pronoun_hits = sum(1 for w in words if w in PRONOUNS)
-    if pronoun_hits == 0:
-        return CheckResult("Personal Pronoun Usage", "pass", "No first-person pronouns found — good resume convention.", 5)
-    if pronoun_hits <= 2:
-        return CheckResult("Personal Pronoun Usage", "warn", f"Found {pronoun_hits} instance(s) of 'I/me/my'. Resumes should use implied first person.", 3)
-    return CheckResult("Personal Pronoun Usage", "fail", f"Found {pronoun_hits} instances of personal pronouns. Remove these.", 0)
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    examples = []
+    hits = 0
+    for line in lines:
+        words = re.findall(r"[A-Za-z']+", line.lower())
+        found = [w for w in words if w in PRONOUNS]
+        if found:
+            hits += len(found)
+            if len(examples) < 6:
+                examples.append(line)
+
+    rating = 10 if hits == 0 else 6 if hits <= 2 else 3
+    summary = "No first-person pronouns found." if hits == 0 else f"Found {hits} instance(s) of personal pronouns."
+    return CheckResult("Personal Pronoun Usage", rating, summary, {"examples": examples, "count": hits})
 
 
 def _check_keywords(resume_text: str, job_keywords: list[str]) -> tuple[CheckResult, list[str], list[str]]:
     text_lower = resume_text.lower()
     matched, missing = [], []
     for kw in job_keywords:
-        if kw.lower() in text_lower:
-            matched.append(kw)
-        else:
-            missing.append(kw)
+        (matched if kw.lower() in text_lower else missing).append(kw)
 
     if not job_keywords:
         return (
-            CheckResult("Skills & Keyword Targeting", "warn", "No job description provided yet — paste one to check keyword alignment.", 5),
+            CheckResult("Skills & Keyword Targeting", 5, "No job description loaded yet -- add one to check keyword alignment.", {"matched": [], "missing": []}),
             matched, missing,
         )
 
     coverage = len(matched) / len(job_keywords)
-    if coverage >= 0.75:
-        status, impact = "pass", 20
-    elif coverage >= 0.45:
-        status, impact = "warn", 12
-    else:
-        status, impact = "fail", 4
-
-    detail = f"Matched {len(matched)}/{len(job_keywords)} target keywords ({coverage:.0%})."
-    if missing:
-        detail += f" Critical issue: missing required keywords — {', '.join(missing[:8])}{'...' if len(missing) > 8 else ''}."
-
-    return CheckResult("Skills & Keyword Targeting", status, detail, impact), matched, missing
+    rating = 9 if coverage >= 0.75 else 7 if coverage >= 0.5 else 4 if coverage >= 0.25 else 2
+    summary = f"Matched {len(matched)}/{len(job_keywords)} target keywords ({coverage:.0%})."
+    return CheckResult("Skills & Keyword Targeting", rating, summary, {"matched": matched, "missing": missing, "coverage": coverage}), matched, missing
 
 
 def _check_complex_sentences(text: str) -> CheckResult:
@@ -123,60 +113,54 @@ def _check_complex_sentences(text: str) -> CheckResult:
     except Exception:
         grade = 10.0
 
-    if grade <= 12:
-        return CheckResult("Sentence Complexity", "pass", f"Reading grade level ~{grade:.1f} — clear and scannable.", 8)
-    if grade <= 15:
-        return CheckResult("Sentence Complexity", "warn", f"Reading grade level ~{grade:.1f} — some sentences run long. Consider shortening.", 5)
-    return CheckResult("Sentence Complexity", "fail", f"Reading grade level ~{grade:.1f} — sentences are too dense for a quick recruiter scan.", 2)
+    rating = 9 if grade <= 10 else 7 if grade <= 12 else 5 if grade <= 15 else 3
+    summary = f"Reading grade level ~{grade:.1f}."
+    return CheckResult("Sentence Complexity", rating, summary, {"grade": grade})
 
 
-def _check_quantified_points(experience_text: str) -> tuple[CheckResult, float]:
+def _check_quantified_points(experience_text: str) -> tuple[CheckResult, float, list[str]]:
     bullets = [b.strip("•-* \t") for b in experience_text.split("\n") if len(b.strip()) > 15]
     if not bullets:
-        return CheckResult("Quantified Achievements", "warn", "Couldn't isolate bullet points automatically — check manually.", 4), 0.0
+        return CheckResult("Quantified Achievements", 5, "Couldn't isolate bullet points automatically.", {"weak_bullets": [], "target_ratio": 0.5}), 0.0, []
 
     number_pattern = re.compile(r"(\$|%|\d)")
-    quantified = [b for b in bullets if number_pattern.search(b)]
-    ratio = len(quantified) / len(bullets)
+    weak = [b for b in bullets if not number_pattern.search(b)]
+    ratio = (len(bullets) - len(weak)) / len(bullets)
 
-    if ratio >= 0.5:
-        return CheckResult("Quantified Achievements", "pass", f"{len(quantified)}/{len(bullets)} bullets include numbers/metrics.", 12), ratio
-    if ratio >= 0.25:
-        return CheckResult("Quantified Achievements", "warn", f"Only {len(quantified)}/{len(bullets)} bullets are quantified. Aim for 50%+.", 7), ratio
-    return CheckResult("Quantified Achievements", "fail", f"Just {len(quantified)}/{len(bullets)} bullets have metrics. Add numbers (%, $, time saved, team size).", 2), ratio
+    rating = 9 if ratio >= 0.6 else 7 if ratio >= 0.4 else 4 if ratio >= 0.2 else 2
+    summary = f"{len(bullets) - len(weak)}/{len(bullets)} bullets include a number, %, or $ metric."
+    return CheckResult("Quantified Achievements", rating, summary, {"weak_bullets": weak[:10], "target_ratio": 0.5}), ratio, weak[:10]
 
 
 def _check_essential_sections(resume: ParsedResume) -> CheckResult:
     found = [s for s in ESSENTIAL_SECTIONS if s in resume.sections and resume.sections[s].strip()]
     missing = [s for s in ESSENTIAL_SECTIONS if s not in found]
-    if not missing:
-        return CheckResult("Essential Resume Sections", "pass", "Summary, Experience, Education, and Skills all detected.", 12)
-    if len(missing) == 1:
-        return CheckResult("Essential Resume Sections", "warn", f"Missing section: {missing[0].title()}.", 7)
-    return CheckResult("Essential Resume Sections", "fail", f"Missing sections: {', '.join(m.title() for m in missing)}.", 2)
+    rating = 10 if not missing else 6 if len(missing) == 1 else 3
+    summary = "All essential sections detected." if not missing else f"Missing: {', '.join(m.title() for m in missing)}."
+    return CheckResult("Essential Resume Sections", rating, summary, {"found": found, "missing": missing})
 
 
 def _check_document_properties(resume: ParsedResume, filename: str) -> CheckResult:
     issues = []
     if resume.has_photo_or_table:
-        issues.append("contains embedded images/tables that some ATS parsers can misread")
+        issues.append("Contains embedded images or tables, which some ATS parsers misread as blank space or garbled text.")
     word_count = len(resume.raw_text.split())
     if word_count < 250:
-        issues.append("content may be too short (under ~250 words)")
+        issues.append(f"Content is quite short ({word_count} words) -- ATS parsers and recruiters may read this as underdeveloped.")
     if word_count > 1100:
-        issues.append("content may be too long for a 1-2 page resume")
+        issues.append(f"Content is long ({word_count} words) -- consider trimming to keep it to roughly 1-2 pages.")
     if not filename.lower().endswith((".pdf", ".docx")):
-        issues.append("file format is not ATS-standard (use PDF or DOCX)")
+        issues.append("File format isn't a standard ATS-safe type (use PDF or DOCX).")
 
-    if not issues:
-        return CheckResult("Document Properties", "pass", "File format and structure look ATS-safe.", 8)
-    return CheckResult("Document Properties", "warn" if len(issues) == 1 else "fail", "; ".join(issues).capitalize() + ".", 4 if len(issues) == 1 else 1)
+    rating = 10 if not issues else 6 if len(issues) == 1 else 3
+    summary = "File format and structure look ATS-safe." if not issues else f"{len(issues)} issue(s) found."
+    return CheckResult("Document Properties", rating, summary, {"issues": issues})
 
 
 def run_full_analysis(resume: ParsedResume, filename: str, job_keywords: list[str] | None = None) -> AnalyticsReport:
     job_keywords = job_keywords or []
-
     checks: list[CheckResult] = []
+
     checks.append(_check_contact_info(resume))
     checks.append(_check_spelling_grammar(resume.raw_text))
     checks.append(_check_personal_pronouns(resume.raw_text))
@@ -187,19 +171,19 @@ def run_full_analysis(resume: ParsedResume, filename: str, job_keywords: list[st
     checks.append(_check_complex_sentences(resume.raw_text))
 
     exp_text = resume.sections.get("experience", resume.raw_text)
-    quant_check, ratio = _check_quantified_points(exp_text)
+    quant_check, ratio, weak_bullets = _check_quantified_points(exp_text)
     checks.append(quant_check)
 
     checks.append(_check_essential_sections(resume))
     checks.append(_check_document_properties(resume, filename))
 
-    overall = sum(c.score_impact for c in checks)
-    overall = max(0, min(100, overall))
+    overall = round(mean(c.rating for c in checks) * 10)
 
     return AnalyticsReport(
-        overall_score=overall,
+        overall_score=max(0, min(100, overall)),
         checks=checks,
         matched_keywords=matched,
         missing_keywords=missing,
         quantified_bullet_ratio=ratio,
+        weak_bullets=weak_bullets,
     )

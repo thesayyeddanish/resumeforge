@@ -1,179 +1,287 @@
-"""Shared visual styling for ResumeForge AI.
+"""Design system for ResumeForge AI.
 
-Import `inject_css()` at the top of every page so the whole app feels
-like one product instead of separate Streamlit pages bolted together.
+Everything visual funnels through here: colors, fonts, the sidebar
+override, and small render helpers. Every page should call
+`inject_css()` once at the top, and use `render()` (never raw
+`st.markdown(..., unsafe_allow_html=True)`) for HTML snippets --
+`render()` strips leading whitespace from every line first, which
+fixes a real bug where indented HTML gets treated as a Markdown code
+block and shown as literal text instead of being rendered.
 """
+
+from __future__ import annotations
 
 import streamlit as st
 
+# --- Palette -----------------------------------------------------------------
+BG = "#05060A"
+CARD = "rgba(255,255,255,0.035)"
+CARD_BORDER = "rgba(255,255,255,0.09)"
+INK = "#E9EAF0"
+MUTED = "#8B90A0"
+ACCENT_A = "#7C5CFF"
+ACCENT_B = "#22D3EE"
+GOOD = "#34D399"
+WARN = "#FBBF24"
+BAD = "#F87171"
 
-PRIMARY = "#6C5CE7"
-PRIMARY_DARK = "#4834d4"
-ACCENT = "#00CEC9"
-SUCCESS = "#00B894"
-WARNING = "#FDCB6E"
-DANGER = "#FF6B6B"
-INK = "#1E1E2E"
-MUTED = "#6B7280"
-CARD_BG = "#FFFFFF"
-PAGE_BG = "#F7F7FC"
+GRADIENT = f"linear-gradient(135deg, {ACCENT_A} 0%, {ACCENT_B} 100%)"
+
+
+def clean_html(s: str) -> str:
+    """Strip leading whitespace from every line.
+
+    Streamlit's Markdown renderer treats 4+ space indentation as a code
+    block, which silently breaks `unsafe_allow_html`. Since HTML doesn't
+    care about whitespace between tags, it's always safe to flatten it.
+    """
+    return "\n".join(line.strip() for line in s.strip("\n").split("\n"))
+
+
+def render(html_str: str) -> None:
+    st.markdown(clean_html(html_str), unsafe_allow_html=True)
 
 
 def inject_css() -> None:
-    st.markdown(
-        f"""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    render(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
-        html, body, [class*="css"] {{
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        }}
+    html, body, [class*="css"] {{
+        font-family: 'Inter', -apple-system, sans-serif;
+    }}
+    h1, h2, h3, .gf-heading {{
+        font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+        letter-spacing: -0.01em;
+    }}
 
-        .stApp {{
-            background: {PAGE_BG};
-        }}
+    .stApp {{
+        background: {BG};
+        background-image:
+            radial-gradient(circle at 15% 0%, rgba(124,92,255,0.10), transparent 40%),
+            radial-gradient(circle at 85% 15%, rgba(34,211,238,0.08), transparent 40%);
+    }}
 
-        /* Hide default Streamlit chrome for a more "product" feel */
-        #MainMenu {{visibility: hidden;}}
-        footer {{visibility: hidden;}}
-        header {{background: transparent;}}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header[data-testid="stHeader"] {{background: transparent;}}
 
-        /* Hero / page header */
-        .rf-hero {{
-            background: linear-gradient(120deg, {PRIMARY} 0%, {PRIMARY_DARK} 60%, {ACCENT} 130%);
-            padding: 2.2rem 2.4rem;
-            border-radius: 20px;
-            color: white;
-            margin-bottom: 1.6rem;
-            box-shadow: 0 10px 30px rgba(108, 92, 231, 0.25);
-        }}
-        .rf-hero h1 {{
-            margin: 0;
-            font-weight: 800;
-            font-size: 2rem;
-            letter-spacing: -0.02em;
-        }}
-        .rf-hero p {{
-            margin: 0.4rem 0 0 0;
-            opacity: 0.92;
-            font-size: 1.02rem;
-        }}
+    .block-container {{
+        padding-top: 2.2rem;
+        max-width: 1100px;
+    }}
 
-        /* Card container */
-        .rf-card {{
-            background: {CARD_BG};
-            border: 1px solid #ECECF6;
-            border-radius: 16px;
-            padding: 1.4rem 1.6rem;
-            box-shadow: 0 2px 10px rgba(30, 30, 46, 0.04);
-            margin-bottom: 1rem;
-        }}
-        .rf-card h3 {{
-            margin-top: 0;
-            font-weight: 700;
-            color: {INK};
-        }}
+    /* ---- Sidebar: ~2/3 the default width, dark/minimal ---- */
+    section[data-testid="stSidebar"] {{
+        background: #08090F;
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }}
+    section[data-testid="stSidebar"] > div:first-child {{
+        width: 15rem !important;
+        min-width: 15rem !important;
+        max-width: 15rem !important;
+    }}
+    section[data-testid="stSidebar"] * {{
+        color: {INK} !important;
+        font-size: 0.86rem;
+    }}
+    section[data-testid="stSidebar"] [data-testid="stSidebarNavItems"] a {{
+        border-radius: 8px;
+        padding: 0.35rem 0.6rem !important;
+    }}
+    section[data-testid="stSidebar"] [data-testid="stSidebarNavItems"] a:hover {{
+        background: rgba(124,92,255,0.14);
+    }}
 
-        /* Score badge */
-        .rf-score-wrap {{
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }}
-        .rf-score-box {{
-            flex: 1;
-            min-width: 160px;
-            border-radius: 16px;
-            padding: 1.2rem;
-            text-align: center;
-            background: {CARD_BG};
-            border: 1px solid #ECECF6;
-        }}
-        .rf-score-num {{
-            font-size: 2.4rem;
-            font-weight: 800;
-            line-height: 1;
-        }}
-        .rf-score-label {{
-            color: {MUTED};
-            font-size: 0.85rem;
-            margin-top: 0.3rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }}
+    /* ---- Glass card ---- */
+    .gf-card {{
+        background: {CARD};
+        border: 1px solid {CARD_BORDER};
+        backdrop-filter: blur(16px);
+        border-radius: 14px;
+        padding: 1.1rem 1.3rem;
+        margin-bottom: 0.85rem;
+        animation: gfFadeUp 0.35s ease both;
+    }}
+    .gf-card h4, .gf-card h3 {{
+        margin: 0 0 0.5rem 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: {INK};
+    }}
+    .gf-card p {{ color: {MUTED}; font-size: 0.88rem; margin: 0.2rem 0; }}
 
-        /* Pill / tag */
-        .rf-pill {{
-            display: inline-block;
-            padding: 0.25rem 0.7rem;
-            border-radius: 999px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            margin: 0.15rem 0.25rem 0.15rem 0;
-        }}
-        .rf-pill-good {{ background: rgba(0,184,148,0.12); color: {SUCCESS}; }}
-        .rf-pill-bad {{ background: rgba(255,107,107,0.12); color: {DANGER}; }}
-        .rf-pill-warn {{ background: rgba(253,203,110,0.20); color: #9C6B00; }}
-        .rf-pill-neutral {{ background: rgba(108,92,231,0.10); color: {PRIMARY_DARK}; }}
+    @keyframes gfFadeUp {{
+        from {{ opacity: 0; transform: translateY(6px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
 
-        /* Section status row */
-        .rf-check-row {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.6rem 0;
-            border-bottom: 1px solid #F0F0F7;
-        }}
-        .rf-check-row:last-child {{ border-bottom: none; }}
+    /* ---- Compact top banner (not the old giant hero) ---- */
+    .gf-topbar {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.4rem;
+    }}
+    .gf-topbar h1 {{
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        background: {GRADIENT};
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }}
+    .gf-topbar p {{
+        color: {MUTED};
+        font-size: 0.85rem;
+        margin: 0.15rem 0 0 0;
+    }}
 
-        /* Buttons */
-        .stButton>button {{
-            background: linear-gradient(120deg, {PRIMARY}, {PRIMARY_DARK});
-            color: white;
-            border: none;
-            border-radius: 10px;
-            padding: 0.55rem 1.4rem;
-            font-weight: 600;
-            transition: all 0.15s ease;
-        }}
-        .stButton>button:hover {{
-            transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(108, 92, 231, 0.35);
-        }}
+    /* ---- Stepper ---- */
+    .gf-stepper {{ display: flex; gap: 0.4rem; margin-bottom: 1.1rem; flex-wrap: wrap; }}
+    .gf-step {{
+        display: flex; align-items: center; gap: 0.4rem;
+        padding: 0.3rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid {CARD_BORDER};
+        color: {MUTED};
+    }}
+    .gf-step.active {{
+        background: rgba(124,92,255,0.16);
+        border-color: rgba(124,92,255,0.5);
+        color: {INK};
+    }}
+    .gf-step .num {{
+        width: 16px; height: 16px; border-radius: 50%;
+        background: {GRADIENT};
+        color: white; font-size: 0.65rem;
+        display: flex; align-items: center; justify-content: center;
+    }}
 
-        /* Sidebar */
-        section[data-testid="stSidebar"] {{
-            background: #14142B;
-        }}
-        section[data-testid="stSidebar"] * {{
-            color: #EDEDF7 !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    /* ---- Chips: present / missing ---- */
+    .gf-chip {{
+        display: inline-block;
+        padding: 0.18rem 0.55rem;
+        border-radius: 7px;
+        font-size: 0.76rem;
+        font-weight: 500;
+        margin: 0.12rem 0.2rem 0.12rem 0;
+    }}
+    .gf-chip-present {{ background: rgba(52,211,153,0.14); color: {GOOD}; }}
+    .gf-chip-missing {{ background: rgba(248,113,113,0.12); color: {BAD}; }}
+    .gf-chip-neutral {{ background: rgba(124,92,255,0.12); color: #B8A9FF; }}
+
+    mark.gf-hit {{
+        background: rgba(52,211,153,0.22);
+        color: {GOOD};
+        padding: 0 2px;
+        border-radius: 3px;
+    }}
+
+    /* ---- Rating badge ---- */
+    .gf-rating {{
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 34px; height: 34px; border-radius: 10px;
+        font-weight: 700; font-size: 0.95rem;
+        flex-shrink: 0;
+    }}
+    .gf-rating-good {{ background: rgba(52,211,153,0.15); color: {GOOD}; }}
+    .gf-rating-warn {{ background: rgba(251,191,36,0.15); color: {WARN}; }}
+    .gf-rating-bad {{ background: rgba(248,113,113,0.15); color: {BAD}; }}
+
+    /* ---- Metric / glass number box ---- */
+    .gf-metric {{
+        flex: 1; min-width: 130px;
+        background: {CARD};
+        border: 1px solid {CARD_BORDER};
+        backdrop-filter: blur(16px);
+        border-radius: 14px;
+        padding: 1rem;
+        text-align: center;
+    }}
+    .gf-metric .val {{ font-size: 1.7rem; font-weight: 700; font-family: 'Space Grotesk', sans-serif; }}
+    .gf-metric .lab {{ color: {MUTED}; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }}
+    .gf-metric-row {{ display: flex; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 1rem; }}
+
+    /* ---- Buttons ---- */
+    .stButton>button, .stDownloadButton>button {{
+        background: {GRADIENT};
+        color: white;
+        border: none;
+        border-radius: 9px;
+        padding: 0.5rem 1.2rem;
+        font-weight: 600;
+        font-size: 0.88rem;
+        transition: all 0.15s ease;
+    }}
+    .stButton>button:hover, .stDownloadButton>button:hover {{
+        filter: brightness(1.12);
+        transform: translateY(-1px);
+    }}
+
+    /* Tighten default Streamlit vertical spacing */
+    div[data-testid="stVerticalBlock"] > div {{ gap: 0.4rem; }}
+    hr {{ border-color: rgba(255,255,255,0.08); margin: 1.4rem 0; }}
+    </style>
+    """)
 
 
-def hero(title: str, subtitle: str) -> None:
-    st.markdown(
-        f"""
-        <div class="rf-hero">
+def topbar(title: str, subtitle: str) -> None:
+    render(f"""
+    <div class="gf-topbar">
+        <div>
             <h1>{title}</h1>
             <p>{subtitle}</p>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    </div>
+    """)
 
 
-def score_box(label: str, value: int, color: str = PRIMARY) -> str:
+def stepper(steps: list[str], active_index: int) -> None:
+    items = ""
+    for i, label in enumerate(steps):
+        cls = "gf-step active" if i == active_index else "gf-step"
+        items += f'<div class="{cls}"><span class="num">{i+1}</span>{label}</div>'
+    render(f'<div class="gf-stepper">{items}</div>')
+
+
+def chip(text: str, kind: str = "neutral") -> str:
+    return f'<span class="gf-chip gf-chip-{kind}">{text}</span>'
+
+
+def chips(items: list[str], kind: str = "neutral", empty_text: str = "None") -> str:
+    if not items:
+        return f'<span style="color:{MUTED}; font-size:0.85rem;">{empty_text}</span>'
+    return "".join(chip(i, kind) for i in items)
+
+
+def rating_class(rating: int) -> str:
+    if rating >= 8:
+        return "good"
+    if rating >= 5:
+        return "warn"
+    return "bad"
+
+
+def rating_color(rating: int) -> str:
+    return {"good": GOOD, "warn": WARN, "bad": BAD}[rating_class(rating)]
+
+
+def rating_badge(rating: int) -> str:
+    return f'<div class="gf-rating gf-rating-{rating_class(rating)}">{rating}</div>'
+
+
+def metric_box(label: str, value, color: str = ACCENT_A) -> str:
     return f"""
-        <div class="rf-score-box">
-            <div class="rf-score-num" style="color:{color};">{value}</div>
-            <div class="rf-score-label">{label}</div>
-        </div>
+    <div class="gf-metric">
+        <div class="val" style="color:{color};">{value}</div>
+        <div class="lab">{label}</div>
+    </div>
     """
 
 
-def pill(text: str, kind: str = "neutral") -> str:
-    return f'<span class="rf-pill rf-pill-{kind}">{text}</span>'
+def metric_row(boxes_html: list[str]) -> None:
+    render(f'<div class="gf-metric-row">{"".join(boxes_html)}</div>')
