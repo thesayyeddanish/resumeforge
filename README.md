@@ -23,7 +23,7 @@ modern web app.
 
 ```
 resumeforge/
-├── app.py                          # Landing page + global session state
+├── Home.py                         # Landing page + global session state
 ├── pages/
 │   ├── 1_📄_Resume_Optimizer.py
 │   ├── 2_✉️_Cover_Letter.py
@@ -65,7 +65,7 @@ cp .streamlit/secrets_example.toml .streamlit/secrets.toml
 Run locally:
 
 ```bash
-streamlit run app.py
+streamlit run Home.py
 ```
 
 ## 2. Push to GitHub
@@ -85,7 +85,7 @@ key**. Only `secrets_example.toml` should go to GitHub.
 ## 3. Deploy on Streamlit Community Cloud
 
 1. Go to https://share.streamlit.io and sign in with GitHub.
-2. Click **New app**, pick your repo/branch, and set the main file to `app.py`.
+2. Click **New app**, pick your repo/branch, and set the main file to `Home.py`.
 3. Before (or after) deploying, go to **Settings → Secrets** on the app
    and paste in:
    ```toml
@@ -93,6 +93,18 @@ key**. Only `secrets_example.toml` should go to GitHub.
    GROQ_MODEL = "openai/gpt-oss-120b"
    ```
 4. Deploy. Streamlit Cloud will install `requirements.txt` automatically.
+
+## ⚠️ If you're updating an existing deployment
+
+The entry file was renamed from `app.py` to `Home.py` (so the sidebar
+nav shows "Home" instead of "app"). If your app is already deployed:
+
+1. Upload/push all the new files as usual.
+2. **Delete the old `app.py`** from your repo — otherwise both files
+   will exist and confuse the deploy.
+3. On Streamlit Community Cloud, go to your app's **Settings → General**
+   and change **Main file path** from `app.py` to `Home.py`.
+4. Reboot the app.
 
 ## Notes & honest limitations (read this before you ship it)
 
@@ -118,6 +130,13 @@ key**. Only `secrets_example.toml` should go to GitHub.
   blocked by sites with heavy bot protection (LinkedIn, Indeed in many
   cases). The "paste text" tab is the reliable fallback — keep it front
   and center in your UI rather than treating it as a backup.
+- **Export format fidelity**: for a DOCX-uploaded resume, exporting
+  edits your ORIGINAL file in place (only the fixed bullets change —
+  fonts, margins, and page count stay exactly as they were). For a
+  PDF-uploaded resume, true layout preservation isn't possible (PDF
+  text extraction loses formatting information), so export instead
+  produces a clean, single-column ATS-safe rebuild. The app tells you
+  which mode applies before you download.
 - **Section splitting** (Summary/Experience/etc.) uses simple heading
   detection. Resumes with unconventional formatting (heavy tables,
   multi-column layouts, creative headers) may not split perfectly —
