@@ -1,6 +1,6 @@
 import streamlit as st
 
-from utils.styling import inject_css, topbar, render, chips, rating_badge, rating_color, metric_box, metric_row
+from utils.styling import inject_css, topbar, render, chips, donut, rating_color, metric_box, metric_row, GOOD, MUTED
 from utils.state import init_state
 from utils.ats_scorer import run_full_analysis
 
@@ -27,15 +27,14 @@ st.divider()
 
 
 def check_card(title: str, body_html: str) -> None:
+    """Large donut on the left (the score is the whole point of this page,
+    so it needs to dominate the card, not sit in a tiny corner badge)."""
     check = next(c for c in report.checks if c.name == title)
     render(f"""
-    <div class="gf-card" style="display:flex; gap:0.9rem;">
-        {rating_badge(check.rating)}
+    <div class="gf-card" style="display:flex; gap:1.1rem; align-items:center;">
+        {donut(check.rating, size=88)}
         <div style="flex:1;">
-            <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                <h4 style="margin:0;">{title}</h4>
-                <span style="color:#8B90A0; font-size:0.78rem;">{check.rating}/10</span>
-            </div>
+            <h4 style="margin:0 0 0.2rem 0;">{title}</h4>
             <p style="margin:0.15rem 0 0.5rem 0;">{check.summary}</p>
             {body_html}
         </div>
@@ -56,7 +55,7 @@ spelling = next(c for c in report.checks if c.name == "Spelling & Grammar")
 if spelling.data["misspelled"]:
     body = chips(spelling.data["misspelled"], "missing")
 else:
-    body = '<p style="color:#34D399;">No flagged words 🎉</p>'
+    body = f'<p style="color:{GOOD};">No flagged words 🎉</p>'
 check_card("Spelling & Grammar", body)
 
 # 3. Personal Pronoun Usage
@@ -64,19 +63,16 @@ pronoun = next(c for c in report.checks if c.name == "Personal Pronoun Usage")
 if pronoun.data["examples"]:
     body = "".join(f'<p style="font-style:italic; font-size:0.82rem;">"{ex}"</p>' for ex in pronoun.data["examples"])
 else:
-    body = '<p style="color:#34D399;">No first-person pronouns found 🎉</p>'
+    body = f'<p style="color:{GOOD};">No first-person pronouns found 🎉</p>'
 check_card("Personal Pronoun Usage", body)
 
-# 4. Skills & Keyword Targeting
+# 4. Skills & Keyword Targeting (donut + present/missing columns below)
 kw = next(c for c in report.checks if c.name == "Skills & Keyword Targeting")
 render(f"""
-<div class="gf-card" style="display:flex; gap:0.9rem;">
-    {rating_badge(kw.rating)}
+<div class="gf-card" style="display:flex; gap:1.1rem; align-items:center;">
+    {donut(kw.rating, size=88)}
     <div style="flex:1;">
-        <div style="display:flex; justify-content:space-between; align-items:baseline;">
-            <h4 style="margin:0;">Skills & Keyword Targeting</h4>
-            <span style="color:#8B90A0; font-size:0.78rem;">{kw.rating}/10</span>
-        </div>
+        <h4 style="margin:0 0 0.2rem 0;">Skills & Keyword Targeting</h4>
         <p style="margin:0.15rem 0 0.5rem 0;">{kw.summary}</p>
     </div>
 </div>
@@ -98,9 +94,9 @@ target_pct = int(quant.data.get("target_ratio", 0.5) * 100)
 weak = quant.data.get("weak_bullets", [])
 if weak:
     body = f'<p style="font-size:0.82rem;">Aim for {target_pct}%+ of bullets with a number. These currently have none:</p>' + \
-           "".join(f'<p style="font-size:0.82rem; padding:0.3rem 0.5rem; background:rgba(248,113,113,0.08); border-radius:6px; margin:0.25rem 0;">{b}</p>' for b in weak)
+           "".join(f'<p style="font-size:0.82rem; padding:0.3rem 0.5rem; background:rgba(239,68,68,0.07); border-radius:6px; margin:0.25rem 0;">{b}</p>' for b in weak)
 else:
-    body = '<p style="color:#34D399;">All bullets are quantified 🎉</p>'
+    body = f'<p style="color:{GOOD};">All bullets are quantified 🎉</p>'
 check_card("Quantified Achievements", body)
 
 # 7. Essential Resume Sections
@@ -114,7 +110,7 @@ docprops = next(c for c in report.checks if c.name == "Document Properties")
 if docprops.data["issues"]:
     body = "".join(f'<p style="font-size:0.82rem;">• {issue}</p>' for issue in docprops.data["issues"])
 else:
-    body = '<p style="color:#34D399;">No structural red flags 🎉</p>'
+    body = f'<p style="color:{GOOD};">No structural red flags 🎉</p>'
 check_card("Document Properties", body)
 
 st.divider()
@@ -128,7 +124,7 @@ for i, c in enumerate(weakest, start=1):
         <div style="min-width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,#7C5CFF,#22D3EE);
             display:flex; align-items:center; justify-content:center; font-weight:700; color:white; font-size:0.8rem;">{i}</div>
         <div>
-            <h4 style="margin-bottom:0.1rem;">{c.name} <span style="color:#8B90A0; font-weight:400; font-size:0.8rem;">({c.rating}/10)</span></h4>
+            <h4 style="margin-bottom:0.1rem;">{c.name} <span style="color:{MUTED}; font-weight:400; font-size:0.8rem;">({c.rating}/10)</span></h4>
             <p style="margin:0;">{c.summary}</p>
         </div>
     </div>

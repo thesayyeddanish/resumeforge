@@ -182,12 +182,12 @@ if report and st.session_state.parsed_resume.sections:
         render(f'<p style="color:#8B90A0; font-size:0.78rem; margin:0.5rem 0 0.15rem; text-transform:uppercase; letter-spacing:0.04em;">{section_key.title()}</p>')
         lc, rc = st.columns(2)
         with lc:
-            render(f'<div class="gf-card" style="max-height:260px; overflow-y:auto;"><p style="color:#E9EAF0; font-size:0.85rem; line-height:1.55;">{highlight_matches(section_text, all_present)}</p></div>')
+            render(f'<div class="gf-card gf-compare-box"><p style="color:#181A24; font-size:0.85rem; line-height:1.55;">{highlight_matches(section_text, all_present)}</p></div>')
         with rc:
             fb = sf.get(section_key, {})
             cons_html = "".join(f"<p>⚠️ {c}</p>" for c in fb.get("cons", []))
             render(f"""
-            <div class="gf-card">
+            <div class="gf-card gf-compare-box">
                 <p style="color:#8B90A0; font-size:0.75rem; margin-bottom:0.4rem;">NOT CLEARLY DEMONSTRATED FOR THIS ROLE</p>
                 {chips(all_missing, "missing", "Nothing missing 🎉")}
                 {cons_html}
@@ -222,10 +222,10 @@ if report and report.weak_bullets:
         for item in st.session_state.weak_bullet_rewrites:
             lc, rc = st.columns(2)
             with lc:
-                render(f'<div class="gf-card"><p style="color:#8B90A0; font-size:0.72rem;">CURRENT</p><p style="color:#E9EAF0;">{item.get("original","")}</p></div>')
+                render(f'<div class="gf-card"><p style="color:#8B90A0; font-size:0.72rem;">CURRENT</p><p style="color:#181A24;">{item.get("original","")}</p></div>')
             with rc:
                 metric_line = f'<p style="color:{ACCENT_A}; font-size:0.78rem; margin-top:0.4rem;">💡 Add: {item.get("metric_template")}</p>' if item.get("metric_template") else ""
-                render(f'<div class="gf-card" style="border-color:rgba(52,211,153,0.35);"><p style="color:#8B90A0; font-size:0.72rem;">SUGGESTED</p><p style="color:#E9EAF0;">{item.get("rewritten","")}</p>{metric_line}</div>')
+                render(f'<div class="gf-card" style="border-color:rgba(52,211,153,0.35);"><p style="color:#8B90A0; font-size:0.72rem;">SUGGESTED</p><p style="color:#181A24;">{item.get("rewritten","")}</p>{metric_line}</div>')
 
 st.divider()
 
