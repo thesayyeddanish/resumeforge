@@ -1,253 +1,268 @@
 import streamlit as st
 
-from utils.styling import inject_css, hero, score_box, pill
+from utils.styling import inject_css, topbar, stepper, render, chips, metric_box, metric_row, ACCENT_A, GOOD, WARN, BAD
 from utils.state import init_state
 from utils.parsers import parse_resume
 from utils.job_intel import fetch_job_from_url, build_job_listing_from_text, extract_keywords
 from utils.ats_scorer import run_full_analysis
-from utils.ai_client import semantic_gap_analysis, section_feedback, rewrite_bullets_star
-from utils.exporter import text_to_docx, text_to_pdf
+from utils.ai_client import semantic_gap_analysis, section_feedback, rewrite_bullets
+from utils.highlight import highlight_matches
+from utils.exporter import text_to_docx, text_to_pdf, apply_bullet_replacements_to_docx
 
 st.set_page_config(page_title="Resume Optimizer • ResumeForge AI", page_icon="📄", layout="wide")
 inject_css()
 init_state()
-hero("📄 Resume Optimizer", "Upload your resume, target a job, and see exactly what to fix before you apply.")
 
-# --- Step 1: Upload resume ----------------------------------------------------
-st.markdown("### Step 1 — Import your resume")
-uploaded = st.file_uploader("Upload baseline resume (PDF or DOCX)", type=["pdf", "docx"])
+topbar("📄 Resume Optimizer", "Upload a resume, target a job, and see exactly what to fix before you apply.")
+
+# Figure out which step is "active" for the stepper display
+has_resume = st.session_state.parsed_resume is not None
+has_job = bool(st.session_state.job_listing and st.session_state.job_listing.raw_text)
+has_analysis = st.session_state.analytics_before is not None
+active = 3 if has_analysis else 2 if has_job else 1 if has_resume else 0
+stepper(["Upload resume", "Add target job", "Run analysis", "Review & export"], active)
+
+# ============================================================================
+# STEP 1 — Upload
+# ============================================================================
+c1, c2 = st.columns([2, 1])
+with c1:
+    uploaded = st.file_uploader("Upload resume", type=["pdf", "docx"], label_visibility="collapsed",
+                                 help="PDF or DOCX")
+with c2:
+    if st.session_state.parsed_resume:
+        render(f'<div style="padding-top:0.4rem; color:{GOOD}; font-size:0.85rem;">✓ {st.session_state.resume_filename} · {len(st.session_state.parsed_resume.raw_text.split())} words</div>')
 
 if uploaded is not None:
     file_bytes = uploaded.read()
     if uploaded.name != st.session_state.get("resume_filename"):
-        with st.spinner("Reading your resume..."):
+        with st.spinner("Reading resume..."):
             try:
                 parsed = parse_resume(file_bytes, uploaded.name)
                 st.session_state.resume_bytes = file_bytes
                 st.session_state.resume_filename = uploaded.name
                 st.session_state.parsed_resume = parsed
-                # reset downstream state since resume changed
                 st.session_state.analytics_before = None
                 st.session_state.gap_analysis = None
                 st.session_state.section_feedback = None
-                st.session_state.rewritten_bullets = None
+                st.session_state.weak_bullet_rewrites = None
+                st.rerun()
             except ValueError as e:
                 st.error(str(e))
 
-if st.session_state.parsed_resume:
-    st.success(f"✅ Loaded: {st.session_state.resume_filename} ({len(st.session_state.parsed_resume.raw_text.split())} words)")
-    with st.expander("Preview extracted text"):
-        st.text(st.session_state.parsed_resume.raw_text[:3000])
-
 st.divider()
 
-# --- Step 2: Job info ---------------------------------------------------------
-st.markdown("### Step 2 — Auto-extract job info")
-tab_url, tab_text = st.tabs(["🔗 Paste job URL", "📋 Paste job text"])
+# ============================================================================
+# STEP 2 — Job info (no preview clutter)
+# ============================================================================
+tab_url, tab_text = st.tabs(["Paste job URL", "Paste job text"])
 
 with tab_url:
-    url = st.text_input("Job listing URL")
-    if st.button("Fetch job from URL", key="fetch_url_btn"):
-        with st.spinner("Fetching listing..."):
+    uc1, uc2 = st.columns([3, 1])
+    with uc1:
+        url = st.text_input("Job URL", label_visibility="collapsed", placeholder="https://...")
+    with uc2:
+        fetch_clicked = st.button("Fetch", use_container_width=True)
+    if fetch_clicked:
+        with st.spinner("Fetching..."):
             try:
                 listing = fetch_job_from_url(url)
                 st.session_state.job_listing = listing
                 st.session_state.job_keywords = extract_keywords(listing.raw_text)
-                st.success("Job description fetched.")
+                st.rerun()
             except ValueError as e:
                 st.error(str(e))
 
 with tab_text:
-    company_name = st.text_input("Company name (optional)", key="company_input")
-    job_title_input = st.text_input("Job title (optional)", key="title_input")
-    job_text_input = st.text_area("Paste the full job description", height=220)
-    if st.button("Use this job description", key="use_text_btn"):
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        company_name = st.text_input("Company (optional)", key="company_input", placeholder="Company")
+    with tc2:
+        job_title_input = st.text_input("Job title (optional)", key="title_input", placeholder="Job title")
+    job_text_input = st.text_area("Job description", height=140, label_visibility="collapsed", placeholder="Paste the full job description here...")
+    if st.button("Save job description"):
         listing = build_job_listing_from_text(job_text_input, title=job_title_input, company=company_name)
         st.session_state.job_listing = listing
         st.session_state.job_keywords = extract_keywords(job_text_input)
-        st.success("Job description saved.")
+        st.rerun()
 
-if st.session_state.job_listing and st.session_state.job_listing.raw_text:
-    with st.expander("Preview job description"):
-        st.text(st.session_state.job_listing.raw_text[:2500])
-    st.caption(f"Extracted {len(st.session_state.job_keywords)} candidate keywords for ATS matching.")
+if has_job:
+    render(f'<div style="color:{GOOD}; font-size:0.85rem; margin-top:0.3rem;">✓ Job loaded · {len(st.session_state.job_keywords)} target keywords identified</div>')
 
 st.divider()
 
-# --- Step 3: Run analysis ------------------------------------------------------
-st.markdown("### Step 3 — ATS Score Comparison")
+# ============================================================================
+# STEP 3 — Analysis
+# ============================================================================
+run_clicked = st.button("🔍 Run ATS Analysis", disabled=not has_resume, type="primary")
 
-ready = st.session_state.parsed_resume is not None
-run_col, _ = st.columns([1, 3])
-with run_col:
-    run_clicked = st.button("🔍 Run ATS Analysis", disabled=not ready, use_container_width=True)
-
-if not ready:
-    st.info("Upload a resume above to run analysis.")
+if not has_resume:
+    st.caption("Upload a resume above to run analysis.")
 
 if run_clicked:
-    with st.spinner("Scoring your resume..."):
-        before = run_full_analysis(
-            st.session_state.parsed_resume,
-            st.session_state.resume_filename,
-            job_keywords=st.session_state.job_keywords,
+    with st.spinner("Scoring resume..."):
+        st.session_state.analytics_before = run_full_analysis(
+            st.session_state.parsed_resume, st.session_state.resume_filename, job_keywords=st.session_state.job_keywords,
         )
-        st.session_state.analytics_before = before
-
-    if st.session_state.job_listing and st.session_state.job_listing.raw_text:
-        with st.spinner("Running semantic gap analysis with AI..."):
+    if has_job:
+        with st.spinner("Running semantic gap analysis..."):
             try:
                 st.session_state.gap_analysis = semantic_gap_analysis(
-                    st.session_state.parsed_resume.raw_text,
-                    st.session_state.job_listing.raw_text,
+                    st.session_state.parsed_resume.raw_text, st.session_state.job_listing.raw_text,
                 )
             except Exception as e:
                 st.warning(f"Gap analysis unavailable: {e}")
-
-        with st.spinner("Generating section-wise feedback..."):
+        with st.spinner("Generating section feedback..."):
             try:
                 st.session_state.section_feedback = section_feedback(
-                    st.session_state.parsed_resume.raw_text,
-                    st.session_state.job_listing.raw_text,
+                    st.session_state.parsed_resume.raw_text, st.session_state.job_listing.raw_text,
                 )
             except Exception as e:
                 st.warning(f"Section feedback unavailable: {e}")
+    st.rerun()
 
-if st.session_state.analytics_before:
-    before = st.session_state.analytics_before
-    # "Modified" score is illustrative: current score + potential lift if
-    # missing keywords/quant points get addressed via the STAR rewriter below.
-    potential_lift = min(25, len(before.missing_keywords) * 2 + (10 if before.quantified_bullet_ratio < 0.5 else 0))
-    after_estimate = min(100, before.overall_score + potential_lift)
+report = st.session_state.analytics_before
+gap = st.session_state.gap_analysis
 
-    st.markdown(
-        f"""<div class="rf-score-wrap">
-        {score_box("Current ATS Score", before.overall_score, "#FF6B6B" if before.overall_score < 60 else "#FDCB6E" if before.overall_score < 80 else "#00B894")}
-        {score_box("Potential Score After Fixes", after_estimate, "#00B894")}
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    st.caption("Potential score reflects applying the keyword and quantification fixes suggested below — head to Advanced Analytics for the full breakdown.")
+if report:
+    potential_lift = min(25, len(report.missing_keywords) * 2 + (10 if report.quantified_bullet_ratio < 0.5 else 0))
+    after_estimate = min(100, report.overall_score + potential_lift)
+    score_color = BAD if report.overall_score < 60 else WARN if report.overall_score < 80 else GOOD
 
-st.divider()
+    metric_row([
+        metric_box("Current ATS Score", report.overall_score, score_color),
+        metric_box("Potential After Fixes", after_estimate, GOOD),
+    ])
+    st.caption("Full breakdown of every check lives on the Advanced Analytics page.")
 
-# --- Step 4: Semantic Gap Analysis --------------------------------------------
-if st.session_state.gap_analysis:
-    st.markdown("### Semantic Gap Analysis & Compatibility Strategy")
-    gap = st.session_state.gap_analysis
+# ============================================================================
+# Keyword Universe — present vs missing, three rows
+# ============================================================================
+if gap:
+    st.divider()
+    render('<h4 class="gf-heading">Keyword Universe</h4>')
 
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        st.markdown(
-            f"""<div class="rf-card"><h3>Alignment Score</h3>
-            <div class="rf-score-num" style="color:#6C5CE7;">{gap.get('alignment_score_0_to_100', '—')}</div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-    with c2:
-        st.markdown(f"""<div class="rf-card"><h3>Summary</h3><p>{gap.get('compatibility_summary', '')}</p></div>""", unsafe_allow_html=True)
+    rows = [
+        ("Keywords", gap.get("matched_keywords", report.matched_keywords if report else []), gap.get("missing_keywords", [])),
+        ("Technical Skills", gap.get("matched_technical_skills", []), gap.get("missing_technical_skills", [])),
+        ("Industry Terms", gap.get("matched_industry_terms", []), gap.get("missing_industry_terms", [])),
+    ]
+    for label, present, missing in rows:
+        render(f'<p style="color:#8B90A0; font-size:0.78rem; margin-bottom:0.15rem; text-transform:uppercase; letter-spacing:0.04em;">{label}</p>')
+        pc, mc = st.columns(2)
+        with pc:
+            render(chips(present, "present", "None found"))
+        with mc:
+            render(chips(missing, "missing", "None missing 🎉"))
 
-    kw_col1, kw_col2, kw_col3 = st.columns(3)
-    with kw_col1:
-        st.markdown("**Missing Keywords**")
-        st.markdown("".join(pill(k, "bad") for k in gap.get("missing_keywords", [])) or "None 🎉", unsafe_allow_html=True)
-    with kw_col2:
-        st.markdown("**Missing Technical Skills**")
-        st.markdown("".join(pill(k, "warn") for k in gap.get("missing_technical_skills", [])) or "None 🎉", unsafe_allow_html=True)
-    with kw_col3:
-        st.markdown("**Missing Industry Terms**")
-        st.markdown("".join(pill(k, "neutral") for k in gap.get("missing_industry_terms", [])) or "None 🎉", unsafe_allow_html=True)
+    render(f"""
+    <div class="gf-card" style="margin-top:0.6rem;">
+        <h4>Compatibility Summary</h4>
+        <p>{gap.get('compatibility_summary','')}</p>
+    </div>
+    """)
+    if gap.get("alignment_strategy"):
+        render('<div class="gf-card"><h4>Alignment Strategy</h4>' + "".join(f"<p>• {s}</p>" for s in gap["alignment_strategy"]) + "</div>")
 
-    st.markdown("**Alignment Strategy**")
-    for item in gap.get("alignment_strategy", []):
-        st.markdown(f"- {item}")
+# ============================================================================
+# Section-by-section: original (highlighted) vs missing terms
+# ============================================================================
+if report and st.session_state.parsed_resume.sections:
+    st.divider()
+    render('<h4 class="gf-heading">Section-by-Section: Present vs. Missing</h4>')
 
-st.divider()
+    all_present = list({*report.matched_keywords, *((gap or {}).get("matched_technical_skills", [])), *((gap or {}).get("matched_industry_terms", []))})
+    all_missing = list({*report.missing_keywords, *((gap or {}).get("missing_technical_skills", [])), *((gap or {}).get("missing_industry_terms", []))})
 
-# --- Step 5: Section-wise pros & cons -----------------------------------------
-if st.session_state.section_feedback:
-    st.markdown("### Section-wise Pros & Cons")
-    sf = st.session_state.section_feedback
-    cols = st.columns(4)
-    for col, section in zip(cols, ["summary", "experience", "projects", "skills"]):
-        data = sf.get(section, {})
-        with col:
-            st.markdown(f"""<div class="rf-card"><h3>{section.title()}</h3>""", unsafe_allow_html=True)
-            for pro in data.get("pros", []):
-                st.markdown(f"✅ {pro}")
-            for con in data.get("cons", []):
-                st.markdown(f"⚠️ {con}")
-            st.markdown("</div>", unsafe_allow_html=True)
+    sf = st.session_state.section_feedback or {}
+    for section_key in ["summary", "skills", "experience", "projects"]:
+        section_text = st.session_state.parsed_resume.sections.get(section_key, "").strip()
+        if not section_text:
+            continue
+        render(f'<p style="color:#8B90A0; font-size:0.78rem; margin:0.5rem 0 0.15rem; text-transform:uppercase; letter-spacing:0.04em;">{section_key.title()}</p>')
+        lc, rc = st.columns(2)
+        with lc:
+            render(f'<div class="gf-card" style="max-height:260px; overflow-y:auto;"><p style="color:#E9EAF0; font-size:0.85rem; line-height:1.55;">{highlight_matches(section_text, all_present)}</p></div>')
+        with rc:
+            fb = sf.get(section_key, {})
+            cons_html = "".join(f"<p>⚠️ {c}</p>" for c in fb.get("cons", []))
+            render(f"""
+            <div class="gf-card">
+                <p style="color:#8B90A0; font-size:0.75rem; margin-bottom:0.4rem;">NOT CLEARLY DEMONSTRATED FOR THIS ROLE</p>
+                {chips(all_missing, "missing", "Nothing missing 🎉")}
+                {cons_html}
+            </div>
+            """)
 
-st.divider()
+# ============================================================================
+# Weak bullet fixer (auto-detected, no manual paste needed)
+# ============================================================================
+if report and report.weak_bullets:
+    st.divider()
+    render('<h4 class="gf-heading">Bullets Missing a Metric</h4>')
+    render(f'<p style="color:#8B90A0; font-size:0.85rem;">{len(report.weak_bullets)} bullet(s) in your Experience section have no number, %, or $ — these read weaker to both ATS systems and recruiters.</p>')
 
-# --- Step 6: STAR bullet rewriting + side-by-side view ------------------------
-st.markdown("### STAR-Method Bullet Optimizer")
-st.caption("Paste (or edit) the experience bullets you want rewritten. One bullet per line.")
-
-default_bullets = ""
-if st.session_state.parsed_resume and st.session_state.parsed_resume.sections.get("experience"):
-    default_bullets = st.session_state.parsed_resume.sections["experience"][:1500]
-
-bullets_input = st.text_area("Experience bullets", value=default_bullets, height=180, key="bullets_area")
-
-if st.button("✨ Rewrite bullets with STAR method"):
-    lines = [b.strip("•-* \t") for b in bullets_input.split("\n") if len(b.strip()) > 5]
-    if not lines:
-        st.warning("Add at least one bullet point first.")
-    else:
-        with st.spinner("Rewriting bullets..."):
+    if st.button("✨ Suggest fixes for these bullets"):
+        with st.spinner("Rewriting..."):
             try:
-                job_text = st.session_state.job_listing.raw_text if st.session_state.job_listing else ""
-                st.session_state.rewritten_bullets = rewrite_bullets_star(lines, job_text)
+                job_text = st.session_state.job_listing.raw_text if has_job else ""
+                results = rewrite_bullets(report.weak_bullets, job_text)
+                # Zip positionally against our own known-good originals rather than
+                # trusting the model to echo them back verbatim -- this guarantees
+                # the "original" text is an exact substring of the resume, which
+                # the export step below depends on for reliable find/replace.
+                st.session_state.weak_bullet_rewrites = [
+                    {"original": orig, "rewritten": r.get("rewritten", ""), "metric_template": r.get("metric_template", "")}
+                    for orig, r in zip(report.weak_bullets, results)
+                ]
             except Exception as e:
                 st.error(f"Couldn't rewrite bullets: {e}")
 
-if st.session_state.rewritten_bullets:
-    st.markdown("#### Side-by-Side: Original vs AI-Suggested")
-    for i, item in enumerate(st.session_state.rewritten_bullets):
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"""<div class="rf-card"><b>Original</b><p>{item.get('original','')}</p></div>""", unsafe_allow_html=True)
-        with c2:
-            st.markdown(
-                f"""<div class="rf-card" style="border-color:#00CEC9;"><b>AI-Suggested</b>
-                <p>{item.get('rewritten','')}</p>
-                <p style="color:#6B7280; font-size:0.85rem;">💡 {item.get('note','')}</p></div>""",
-                unsafe_allow_html=True,
-            )
+    if st.session_state.weak_bullet_rewrites:
+        for item in st.session_state.weak_bullet_rewrites:
+            lc, rc = st.columns(2)
+            with lc:
+                render(f'<div class="gf-card"><p style="color:#8B90A0; font-size:0.72rem;">CURRENT</p><p style="color:#E9EAF0;">{item.get("original","")}</p></div>')
+            with rc:
+                metric_line = f'<p style="color:{ACCENT_A}; font-size:0.78rem; margin-top:0.4rem;">💡 Add: {item.get("metric_template")}</p>' if item.get("metric_template") else ""
+                render(f'<div class="gf-card" style="border-color:rgba(52,211,153,0.35);"><p style="color:#8B90A0; font-size:0.72rem;">SUGGESTED</p><p style="color:#E9EAF0;">{item.get("rewritten","")}</p>{metric_line}</div>')
 
 st.divider()
 
-# --- Step 7: Export ------------------------------------------------------------
-st.markdown("### ATS-Friendly Export")
-export_source = st.radio("What do you want to export?", ["Original resume text", "Rewritten bullets appended to resume"], horizontal=True)
-
+# ============================================================================
+# Export — side by side, no extra radio choices
+# ============================================================================
 if st.session_state.parsed_resume:
-    if export_source == "Original resume text":
-        final_text = st.session_state.parsed_resume.raw_text
-    else:
-        rewritten_block = "\n".join(
-            f"• {item.get('rewritten','')}" for item in (st.session_state.rewritten_bullets or [])
-        )
-        final_text = st.session_state.parsed_resume.raw_text + "\n\n--- OPTIMIZED BULLETS ---\n" + rewritten_block
+    render('<h4 class="gf-heading">Export</h4>')
 
-    dl_col1, dl_col2 = st.columns(2)
-    with dl_col1:
-        st.download_button(
-            "⬇️ Download as DOCX",
-            data=text_to_docx("Resume", final_text),
-            file_name="optimized_resume.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-        )
-    with dl_col2:
-        st.download_button(
-            "⬇️ Download as PDF",
-            data=text_to_pdf("Resume", final_text),
-            file_name="optimized_resume.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-else:
-    st.info("Upload a resume to enable export.")
+    original_text = st.session_state.parsed_resume.raw_text
+    bullet_map = {item["original"]: item["rewritten"] for item in (st.session_state.weak_bullet_rewrites or []) if item.get("rewritten")}
+    modified_text = original_text
+    for orig, new in bullet_map.items():
+        if orig in modified_text:
+            modified_text = modified_text.replace(orig, new)
+
+    lc, rc = st.columns(2)
+    with lc:
+        render(f'<p style="color:#8B90A0; font-size:0.75rem;">CURRENT</p><div class="gf-card" style="max-height:320px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem;">{original_text[:4000]}</div>')
+    with rc:
+        render(f'<p style="color:#8B90A0; font-size:0.75rem;">MODIFIED</p><div class="gf-card" style="max-height:320px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem; border-color:rgba(52,211,153,0.3);">{modified_text[:4000]}</div>')
+
+    is_docx_original = st.session_state.resume_filename.lower().endswith(".docx")
+    if not bullet_map:
+        st.caption("Run the bullet fixer above to generate a modified version to export.")
+    else:
+        if is_docx_original:
+            st.caption("Your original DOCX's fonts, spacing, and page layout are preserved — only the fixed bullets are edited in place.")
+            docx_bytes = apply_bullet_replacements_to_docx(st.session_state.resume_bytes, bullet_map)
+        else:
+            st.caption("Your original was a PDF, so exact layout can't be preserved — this is a clean, ATS-safe rebuild instead.")
+            docx_bytes = text_to_docx("Resume", modified_text)
+
+        dl1, dl2 = st.columns(2)
+        with dl1:
+            st.download_button("⬇️ Download DOCX", data=docx_bytes, file_name="optimized_resume.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        with dl2:
+            st.download_button("⬇️ Download PDF", data=text_to_pdf("Resume", modified_text), file_name="optimized_resume.pdf",
+                                mime="application/pdf", use_container_width=True)
