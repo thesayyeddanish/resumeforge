@@ -89,6 +89,21 @@ def _split_into_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def _sanitize_text(text: str) -> str:
+    """Fix known "tofu glyph" artifacts from PDFs with quirky embedded fonts.
+
+    Some resume PDFs (often ones exported from certain design tools)
+    encode their hyphen glyph in a way that extracts as a black-square
+    placeholder instead of "-" -- e.g. "pre■game" instead of "pre-game".
+    This shows up not just on screen but as literal black boxes in
+    DOCX/PDF exports, since the export font has no glyph for it either.
+    Replacing these with a plain hyphen fixes it everywhere downstream.
+    """
+    for bad_char in ("■", "▪", "◾", "\uf0b7", "\uf0a7", "\ufffd", "\x96", "\x97"):
+        text = text.replace(bad_char, "-")
+    return text
+
+
 def parse_resume(file_bytes: bytes, filename: str) -> ParsedResume:
     filename_lower = filename.lower()
     has_visual_risk = False
@@ -100,7 +115,7 @@ def parse_resume(file_bytes: bytes, filename: str) -> ParsedResume:
     else:
         raise ValueError("Unsupported file type. Please upload a PDF or DOCX file.")
 
-    raw_text = raw_text.replace("\r", "")
+    raw_text = _sanitize_text(raw_text.replace("\r", ""))
     lines = [l for l in raw_text.split("\n")]
     email, phone, linkedin = _find_contact_fields(raw_text)
     sections = _split_into_sections(raw_text)
