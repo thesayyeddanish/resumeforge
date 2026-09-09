@@ -25,10 +25,10 @@ modern web app.
 resumeforge/
 ├── Home.py                         # Landing page + global session state
 ├── pages/
-│   ├── 1_📄_Resume_Optimizer.py
-│   ├── 2_✉️_Cover_Letter.py
-│   ├── 3_💰_Salary_Estimator.py
-│   └── 4_📊_Advanced_Analytics.py
+│   ├── 1_Resume_Optimizer.py
+│   ├── 2_Cover_Letter.py
+│   ├── 3_Salary_Estimator.py
+│   └── 4_Advanced_Analytics.py
 ├── utils/
 │   ├── parsers.py        # PDF/DOCX text extraction
 │   ├── ats_scorer.py     # Rule-based ATS scoring (no AI needed)
