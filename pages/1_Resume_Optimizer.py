@@ -48,6 +48,7 @@ if uploaded is not None:
                 st.session_state.weak_bullet_rewrites = None
                 st.session_state.optimized_resume_text = None
                 st.session_state.optimize_resume_error = None
+                st.session_state.optimize_status = None
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
@@ -255,26 +256,31 @@ if report:
 
     if st.button("🚀 Generate Optimized Resume", type="primary"):
         st.session_state.optimize_resume_error = None
-        with st.spinner("Rewriting your resume..."):
+        with st.spinner("Rewriting your resume... this can take 10–30 seconds — please keep this tab open and active (switching apps can interrupt the request on mobile)."):
             try:
                 job_text = st.session_state.job_listing.raw_text if has_job else ""
                 result = optimize_resume(
                     st.session_state.parsed_resume.raw_text, job_text, missing_combined, misspelled,
                 )
                 if not result or not result.strip():
-                    # Treat an empty model response as a failure, not silence --
-                    # the old version of this page would look identical (and
-                    # confusingly say "still doesn't work") whether the call
-                    # errored, returned nothing, or was never attempted.
                     st.session_state.optimize_resume_error = "The AI returned an empty response. This can happen with a very long resume/job description combo — try again, or try trimming the job description text."
+                    st.session_state.optimize_status = f"⚠️ Attempt returned 0 characters."
+                elif result.strip() == st.session_state.parsed_resume.raw_text.strip():
+                    st.session_state.optimized_resume_text = result
+                    st.session_state.optimize_status = "ℹ️ Generated successfully, but the result was identical to your original — nothing needed changing based on the flagged issues."
                 else:
                     st.session_state.optimized_resume_text = result
+                    st.session_state.optimize_status = f"✅ Generated successfully — {len(result)} characters, {abs(len(result) - len(st.session_state.parsed_resume.raw_text))} character difference from original."
             except Exception as e:
-                # Persisted in session_state (not just st.error here) so it
-                # survives to the next rerun instead of silently vanishing
-                # the moment you scroll or touch another widget.
                 st.session_state.optimize_resume_error = f"{type(e).__name__}: {e}"
+                st.session_state.optimize_status = f"❌ Attempt failed: {type(e).__name__}"
         st.rerun()
+
+    # Always shown once an attempt has happened -- success, no-op, or failure --
+    # so a screenshot of this page tells us definitively what occurred instead
+    # of us both guessing across another round trip.
+    if st.session_state.get("optimize_status"):
+        st.caption(st.session_state.optimize_status)
 
     if st.session_state.optimize_resume_error:
         st.error(f"Couldn't generate optimized resume: {st.session_state.optimize_resume_error}")
