@@ -17,7 +17,7 @@ _DEFAULTS = {
     "analytics_before": None,    # utils.ats_scorer.AnalyticsReport
     "gap_analysis": None,
     "section_feedback": None,
-    "weak_bullet_rewrites": None,
+    "optimized_resume_text": None,  # full-resume rewrite that drives the Export "Modified" column
     "cover_letter_text": None,
     "cover_letter_cache_key": None,
     "salary_estimate": None,

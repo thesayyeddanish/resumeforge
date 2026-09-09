@@ -170,6 +170,80 @@ Return JSON: a list of objects, one per input bullet, in the same order:
 
 
 # ---------------------------------------------------------------------------
+# Full-resume optimization -- this is what actually populates "Modified"
+# ---------------------------------------------------------------------------
+
+def optimize_resume(
+    resume_text: str,
+    job_text: str,
+    missing_keywords: list[str] | None = None,
+    misspelled: list[str] | None = None,
+) -> str:
+    """Rewrite the ENTIRE resume, not just isolated bullets.
+
+    This is the function that actually makes "Modified" different from
+    "Current": it tightens every bullet, fixes flagged spelling issues,
+    removes first-person pronouns, and re-words phrasing toward the
+    target job's terminology -- but ONLY where the resume already
+    contains genuine evidence for it. It never inserts a skill, tool,
+    or metric that isn't already true of the candidate, per the Truth
+    Guardrail. Where a bullet has no metric, it inserts a bracketed
+    placeholder like "[X%]" for the candidate to fill in themselves.
+
+    IMPORTANT for export fidelity: the prompt requires the output to
+    keep the exact same number of lines, in the exact same order, as
+    the input -- only line CONTENT may change. This is what lets the
+    export step map old-line -> new-line positionally and edit a DOCX
+    in place rather than rebuilding it from scratch.
+    """
+    missing_keywords = missing_keywords or []
+    misspelled = misspelled or []
+
+    system = f"""You are an expert resume writer performing a full ATS-optimization pass.
+{TRUTH_GUARDRAIL}
+Rewrite the ENTIRE resume text given by the user, following ALL of these rules:
+
+1. STRUCTURE (critical): output must have the EXACT SAME NUMBER OF LINES,
+   in the EXACT SAME ORDER, as the input. Do not merge two lines into
+   one, split one line into two, add new lines, or remove lines --
+   including blank lines. You may only change the CONTENT within each
+   line. This is a hard technical requirement, more important than
+   what would otherwise be the most natural phrasing.
+2. Tighten bullets with strong action verbs and clear, concise scope.
+3. If a bullet already has a number, %, or $, you may reformat it but
+   NEVER change its value or invent an additional one.
+4. If a bullet has NO metric, insert ONE bracketed placeholder such as
+   "[X%]", "[$X]", or "[X team members]" at the natural point in the
+   sentence, for the candidate to fill in with their real number.
+   Never invent a plausible-looking number yourself.
+5. You may reword phrasing toward the target job's terminology ONLY
+   where the resume already contains genuine equivalent evidence.
+   NEVER insert a tool, skill, certification, degree, employer, or
+   qualification with no basis anywhere in the original resume, even
+   if it's a keyword the job explicitly wants.
+6. Fix genuine spelling errors. Some words flagged as possibly
+   misspelled: {', '.join(misspelled[:15]) or 'none flagged'}.
+7. Remove first-person pronouns (I, me, my) if present -- reword to
+   standard resume style (implied first person).
+8. Do not alter contact-info lines, dates, job titles, or employer names.
+
+Return ONLY the rewritten resume as plain text matching the input's
+line structure exactly. No JSON, no commentary, no markdown fences."""
+
+    user = f"""ORIGINAL RESUME (preserve exact line structure):
+{resume_text[:6000]}
+
+TARGET JOB DESCRIPTION (may be empty):
+{job_text[:3000]}
+
+Keywords the target job wants that may be missing -- for CONTEXT ONLY,
+do NOT insert unless the resume already contains genuine equivalent
+evidence: {', '.join(missing_keywords[:20]) or 'none'}"""
+
+    return _call(system, user, max_tokens=3500)
+
+
+# ---------------------------------------------------------------------------
 # Cover letter
 # ---------------------------------------------------------------------------
 
