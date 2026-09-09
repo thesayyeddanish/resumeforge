@@ -5,7 +5,7 @@ from utils.state import init_state
 from utils.parsers import parse_resume
 from utils.job_intel import fetch_job_from_url, build_job_listing_from_text, extract_keywords
 from utils.ats_scorer import run_full_analysis
-from utils.ai_client import semantic_gap_analysis, section_feedback, optimize_resume
+from utils.ai_client import semantic_gap_analysis, section_feedback, rewrite_bullets, optimize_resume
 from utils.highlight import highlight_matches
 from utils.exporter import text_to_docx, text_to_pdf, apply_bullet_replacements_to_docx
 
@@ -47,6 +47,7 @@ if uploaded is not None:
                 st.session_state.section_feedback = None
                 st.session_state.weak_bullet_rewrites = None
                 st.session_state.optimized_resume_text = None
+                st.session_state.optimize_resume_error = None
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
@@ -202,6 +203,37 @@ if report and st.session_state.parsed_resume.sections:
         """)
 
 # ============================================================================
+# Bullet Point Recommendations (auto-detected, quick per-bullet view)
+# ============================================================================
+if report and report.weak_bullets:
+    st.divider()
+    render('<h4 class="gf-heading">Bullet Point Recommendations</h4>')
+    render(f'<p style="color:#8B90A0; font-size:0.85rem;">{len(report.weak_bullets)} bullet(s) in your Experience section have no number, %, or $ — these read weaker to both ATS systems and recruiters.</p>')
+
+    if st.button("✨ Suggest fixes for these bullets"):
+        with st.spinner("Rewriting..."):
+            try:
+                job_text = st.session_state.job_listing.raw_text if has_job else ""
+                results = rewrite_bullets(report.weak_bullets, job_text)
+                # Zip positionally against our own known-good originals rather than
+                # trusting the model to echo them back verbatim.
+                st.session_state.weak_bullet_rewrites = [
+                    {"original": orig, "rewritten": r.get("rewritten", ""), "metric_template": r.get("metric_template", "")}
+                    for orig, r in zip(report.weak_bullets, results)
+                ]
+            except Exception as e:
+                st.error(f"Couldn't rewrite bullets: {e}")
+
+    if st.session_state.weak_bullet_rewrites:
+        for item in st.session_state.weak_bullet_rewrites:
+            lc, rc = st.columns(2)
+            with lc:
+                render(f'<div class="gf-card"><p style="color:#8B90A0; font-size:0.72rem;">CURRENT</p><p style="color:#181A24;">{item.get("original","")}</p></div>')
+            with rc:
+                metric_line = f'<p style="color:#7C5CFF; font-size:0.78rem; margin-top:0.4rem;">💡 Add: {item.get("metric_template")}</p>' if item.get("metric_template") else ""
+                render(f'<div class="gf-card" style="border-color:rgba(16,185,129,0.35);"><p style="color:#8B90A0; font-size:0.72rem;">SUGGESTED</p><p style="color:#181A24;">{item.get("rewritten","")}</p>{metric_line}</div>')
+
+# ============================================================================
 # Generate Optimized Resume — the actual full-resume rewrite that drives Export
 # ============================================================================
 if report:
@@ -222,14 +254,30 @@ if report:
     render(f'<p style="color:#8B90A0; font-size:0.85rem;">This will {", ".join(summary_bits) if summary_bits else "tighten phrasing and fix formatting issues"}. It never invents skills, employers, or numbers that aren\'t already true of you — see the Truth Guardrail note on Home.</p>')
 
     if st.button("🚀 Generate Optimized Resume", type="primary"):
+        st.session_state.optimize_resume_error = None
         with st.spinner("Rewriting your resume..."):
             try:
                 job_text = st.session_state.job_listing.raw_text if has_job else ""
-                st.session_state.optimized_resume_text = optimize_resume(
+                result = optimize_resume(
                     st.session_state.parsed_resume.raw_text, job_text, missing_combined, misspelled,
                 )
+                if not result or not result.strip():
+                    # Treat an empty model response as a failure, not silence --
+                    # the old version of this page would look identical (and
+                    # confusingly say "still doesn't work") whether the call
+                    # errored, returned nothing, or was never attempted.
+                    st.session_state.optimize_resume_error = "The AI returned an empty response. This can happen with a very long resume/job description combo — try again, or try trimming the job description text."
+                else:
+                    st.session_state.optimized_resume_text = result
             except Exception as e:
-                st.error(f"Couldn't generate optimized resume: {e}")
+                # Persisted in session_state (not just st.error here) so it
+                # survives to the next rerun instead of silently vanishing
+                # the moment you scroll or touch another widget.
+                st.session_state.optimize_resume_error = f"{type(e).__name__}: {e}"
+        st.rerun()
+
+    if st.session_state.optimize_resume_error:
+        st.error(f"Couldn't generate optimized resume: {st.session_state.optimize_resume_error}")
 
 st.divider()
 
