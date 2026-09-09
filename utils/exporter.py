@@ -26,6 +26,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
+from utils.textclean import sanitize_text
+
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
@@ -45,7 +47,7 @@ def apply_bullet_replacements_to_docx(original_bytes: bytes, bullet_map: dict[st
     editing rich text without a full diffing engine.
     """
     doc = Document(io.BytesIO(original_bytes))
-    norm_map = {_norm(k): v for k, v in bullet_map.items() if k.strip()}
+    norm_map = {_norm(k): sanitize_text(v) for k, v in bullet_map.items() if k.strip()}
 
     for para in doc.paragraphs:
         p_norm = _norm(para.text)
@@ -68,6 +70,7 @@ def apply_bullet_replacements_to_docx(original_bytes: bytes, bullet_map: dict[st
 
 
 def text_to_docx(title: str, body_text: str) -> bytes:
+    body_text = sanitize_text(body_text)
     doc = Document()
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
@@ -88,6 +91,7 @@ def text_to_docx(title: str, body_text: str) -> bytes:
 
 
 def text_to_pdf(title: str, body_text: str) -> bytes:
+    body_text = sanitize_text(body_text)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=LETTER,

@@ -17,6 +17,8 @@ import os
 import streamlit as st
 from groq import Groq
 
+from utils.textclean import sanitize_text, sanitize_deep
+
 MODEL_DEFAULT = "openai/gpt-oss-120b"  # Groq's current free-tier general-purpose model
 
 TRUTH_GUARDRAIL = """
@@ -62,7 +64,9 @@ def _call(system: str, user: str, max_tokens: int = 2000) -> str:
             {"role": "user", "content": user},
         ],
     )
-    return resp.choices[0].message.content or ""
+    # Sanitize here, at the single choke point every AI call passes through,
+    # so no function below can accidentally skip it.
+    return sanitize_text(resp.choices[0].message.content or "")
 
 
 def _call_json(system: str, user: str, max_tokens: int = 2000) -> dict:
@@ -70,7 +74,7 @@ def _call_json(system: str, user: str, max_tokens: int = 2000) -> dict:
     cleaned = raw.strip().strip("`")
     if cleaned.lower().startswith("json"):
         cleaned = cleaned[4:].strip()
-    return json.loads(cleaned)
+    return sanitize_deep(json.loads(cleaned))
 
 
 # ---------------------------------------------------------------------------

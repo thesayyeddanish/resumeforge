@@ -181,10 +181,21 @@ def inject_css() -> None:
         border-radius: 3px;
     }}
 
-    /* ---- Equal-height comparison boxes (section-by-section) ---- */
-    .gf-compare-box {{
-        height: 280px;
-        overflow-y: auto;
+    /* ---- Equal-height comparison boxes (section-by-section) ----
+       Built as a CSS Grid, not Streamlit columns: grid rows automatically
+       size to the tallest cell in that row, so both sides match height
+       naturally -- no fixed pixel guess, no scrollbar, no clipping. */
+    .gf-compare-grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.9rem;
+        align-items: stretch;
+        margin-bottom: 0.85rem;
+    }}
+    .gf-compare-grid .gf-card {{
+        margin-bottom: 0;
+        height: 100%;
+        box-sizing: border-box;
     }}
 
     /* ---- Metric / glass number box ---- */
