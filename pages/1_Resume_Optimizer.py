@@ -1,11 +1,11 @@
 import streamlit as st
 
-from utils.styling import inject_css, topbar, stepper, render, chips, metric_box, metric_row, ACCENT_A, GOOD, WARN, BAD
+from utils.styling import inject_css, topbar, stepper, render, chips, metric_box, metric_row, GOOD, WARN, BAD
 from utils.state import init_state
 from utils.parsers import parse_resume
 from utils.job_intel import fetch_job_from_url, build_job_listing_from_text, extract_keywords
 from utils.ats_scorer import run_full_analysis
-from utils.ai_client import semantic_gap_analysis, section_feedback, rewrite_bullets
+from utils.ai_client import semantic_gap_analysis, section_feedback, optimize_resume
 from utils.highlight import highlight_matches
 from utils.exporter import text_to_docx, text_to_pdf, apply_bullet_replacements_to_docx
 
@@ -46,6 +46,7 @@ if uploaded is not None:
                 st.session_state.gap_analysis = None
                 st.session_state.section_feedback = None
                 st.session_state.weak_bullet_rewrites = None
+                st.session_state.optimized_resume_text = None
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
@@ -201,66 +202,84 @@ if report and st.session_state.parsed_resume.sections:
         """)
 
 # ============================================================================
-# Weak bullet fixer (auto-detected, no manual paste needed)
+# Generate Optimized Resume — the actual full-resume rewrite that drives Export
 # ============================================================================
-if report and report.weak_bullets:
+if report:
     st.divider()
-    render('<h4 class="gf-heading">Bullets Missing a Metric</h4>')
-    render(f'<p style="color:#8B90A0; font-size:0.85rem;">{len(report.weak_bullets)} bullet(s) in your Experience section have no number, %, or $ — these read weaker to both ATS systems and recruiters.</p>')
+    render('<h4 class="gf-heading">Generate Optimized Resume</h4>')
 
-    if st.button("✨ Suggest fixes for these bullets"):
-        with st.spinner("Rewriting..."):
+    spelling_check = next((c for c in report.checks if c.name == "Spelling & Grammar"), None)
+    misspelled = spelling_check.data.get("misspelled", []) if spelling_check else []
+    missing_combined = list({*report.missing_keywords, *((gap or {}).get("missing_technical_skills", [])), *((gap or {}).get("missing_industry_terms", []))})
+
+    summary_bits = []
+    if missing_combined:
+        summary_bits.append(f"align wording toward {len(missing_combined)} target keyword(s) where genuinely true")
+    if report.weak_bullets:
+        summary_bits.append(f"flag {len(report.weak_bullets)} bullet(s) missing a metric with a fill-in placeholder")
+    if misspelled:
+        summary_bits.append(f"fix {len(misspelled)} possible spelling issue(s)")
+    render(f'<p style="color:#8B90A0; font-size:0.85rem;">This will {", ".join(summary_bits) if summary_bits else "tighten phrasing and fix formatting issues"}. It never invents skills, employers, or numbers that aren\'t already true of you — see the Truth Guardrail note on Home.</p>')
+
+    if st.button("🚀 Generate Optimized Resume", type="primary"):
+        with st.spinner("Rewriting your resume..."):
             try:
                 job_text = st.session_state.job_listing.raw_text if has_job else ""
-                results = rewrite_bullets(report.weak_bullets, job_text)
-                # Zip positionally against our own known-good originals rather than
-                # trusting the model to echo them back verbatim -- this guarantees
-                # the "original" text is an exact substring of the resume, which
-                # the export step below depends on for reliable find/replace.
-                st.session_state.weak_bullet_rewrites = [
-                    {"original": orig, "rewritten": r.get("rewritten", ""), "metric_template": r.get("metric_template", "")}
-                    for orig, r in zip(report.weak_bullets, results)
-                ]
+                st.session_state.optimized_resume_text = optimize_resume(
+                    st.session_state.parsed_resume.raw_text, job_text, missing_combined, misspelled,
+                )
             except Exception as e:
-                st.error(f"Couldn't rewrite bullets: {e}")
-
-    if st.session_state.weak_bullet_rewrites:
-        for item in st.session_state.weak_bullet_rewrites:
-            lc, rc = st.columns(2)
-            with lc:
-                render(f'<div class="gf-card"><p style="color:#8B90A0; font-size:0.72rem;">CURRENT</p><p style="color:#181A24;">{item.get("original","")}</p></div>')
-            with rc:
-                metric_line = f'<p style="color:{ACCENT_A}; font-size:0.78rem; margin-top:0.4rem;">💡 Add: {item.get("metric_template")}</p>' if item.get("metric_template") else ""
-                render(f'<div class="gf-card" style="border-color:rgba(52,211,153,0.35);"><p style="color:#8B90A0; font-size:0.72rem;">SUGGESTED</p><p style="color:#181A24;">{item.get("rewritten","")}</p>{metric_line}</div>')
+                st.error(f"Couldn't generate optimized resume: {e}")
 
 st.divider()
 
 # ============================================================================
-# Export — side by side, no extra radio choices
+# Export — side by side, driven directly by the optimized resume above
 # ============================================================================
 if st.session_state.parsed_resume:
     render('<h4 class="gf-heading">Export</h4>')
 
     original_text = st.session_state.parsed_resume.raw_text
-    bullet_map = {item["original"]: item["rewritten"] for item in (st.session_state.weak_bullet_rewrites or []) if item.get("rewritten")}
-    modified_text = original_text
-    for orig, new in bullet_map.items():
-        if orig in modified_text:
-            modified_text = modified_text.replace(orig, new)
+    modified_text = st.session_state.optimized_resume_text or original_text
 
-    lc, rc = st.columns(2)
-    with lc:
-        render(f'<p style="color:#8B90A0; font-size:0.75rem;">CURRENT</p><div class="gf-card" style="max-height:320px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem;">{original_text[:4000]}</div>')
-    with rc:
-        render(f'<p style="color:#8B90A0; font-size:0.75rem;">MODIFIED</p><div class="gf-card" style="max-height:320px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem; border-color:rgba(52,211,153,0.3);">{modified_text[:4000]}</div>')
+    render(f"""
+    <div class="gf-compare-grid">
+        <div>
+            <p style="color:#8B90A0; font-size:0.75rem;">CURRENT</p>
+            <div class="gf-card" style="max-height:400px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem;">{original_text[:5000]}</div>
+        </div>
+        <div>
+            <p style="color:#8B90A0; font-size:0.75rem;">MODIFIED</p>
+            <div class="gf-card" style="max-height:400px; overflow-y:auto; white-space:pre-wrap; font-size:0.82rem; border-color:rgba(16,185,129,0.35);">{modified_text[:5000]}</div>
+        </div>
+    </div>
+    """)
 
-    is_docx_original = st.session_state.resume_filename.lower().endswith(".docx")
-    if not bullet_map:
-        st.caption("Run the bullet fixer above to generate a modified version to export.")
+    if not st.session_state.optimized_resume_text:
+        st.caption("Click \"Generate Optimized Resume\" above to populate this.")
     else:
-        if is_docx_original:
-            st.caption("Your original DOCX's fonts, spacing, and page layout are preserved — only the fixed bullets are edited in place.")
-            docx_bytes = apply_bullet_replacements_to_docx(st.session_state.resume_bytes, bullet_map)
+        is_docx_original = st.session_state.resume_filename.lower().endswith(".docx")
+
+        # Build a positional line-diff map: the optimizer is instructed to
+        # preserve line count/order exactly, so if that held, we can edit
+        # the original DOCX in place line-by-line. If it didn't hold (the
+        # model restructured something), we safely fall back to a clean
+        # rebuild instead of risking a garbled in-place edit.
+        orig_lines = original_text.split("\n")
+        mod_lines = modified_text.split("\n")
+        line_map = {}
+        if len(orig_lines) == len(mod_lines):
+            for o, m in zip(orig_lines, mod_lines):
+                o_s, m_s = o.strip(), m.strip()
+                if o_s and o_s != m_s:
+                    line_map[o_s] = m_s
+
+        if is_docx_original and line_map:
+            st.caption("Your original DOCX's fonts, spacing, and page layout are preserved — only changed lines are edited in place.")
+            docx_bytes = apply_bullet_replacements_to_docx(st.session_state.resume_bytes, line_map)
+        elif is_docx_original:
+            st.caption("The rewrite restructured lines enough that in-place editing wasn't reliable this time — this is a clean, ATS-safe rebuild instead.")
+            docx_bytes = text_to_docx("Resume", modified_text)
         else:
             st.caption("Your original was a PDF, so exact layout can't be preserved — this is a clean, ATS-safe rebuild instead.")
             docx_bytes = text_to_docx("Resume", modified_text)
@@ -272,3 +291,4 @@ if st.session_state.parsed_resume:
         with dl2:
             st.download_button("⬇️ Download PDF", data=text_to_pdf("Resume", modified_text), file_name="optimized_resume.pdf",
                                 mime="application/pdf", use_container_width=True)
+
