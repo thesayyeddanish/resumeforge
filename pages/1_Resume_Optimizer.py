@@ -179,20 +179,26 @@ if report and st.session_state.parsed_resume.sections:
         section_text = st.session_state.parsed_resume.sections.get(section_key, "").strip()
         if not section_text:
             continue
-        render(f'<p style="color:#8B90A0; font-size:0.78rem; margin:0.5rem 0 0.15rem; text-transform:uppercase; letter-spacing:0.04em;">{section_key.title()}</p>')
-        lc, rc = st.columns(2)
-        with lc:
-            render(f'<div class="gf-card gf-compare-box"><p style="color:#181A24; font-size:0.85rem; line-height:1.55;">{highlight_matches(section_text, all_present)}</p></div>')
-        with rc:
-            fb = sf.get(section_key, {})
-            cons_html = "".join(f"<p>⚠️ {c}</p>" for c in fb.get("cons", []))
-            render(f"""
-            <div class="gf-card gf-compare-box">
-                <p style="color:#8B90A0; font-size:0.75rem; margin-bottom:0.4rem;">NOT CLEARLY DEMONSTRATED FOR THIS ROLE</p>
-                {chips(all_missing, "missing", "Nothing missing 🎉")}
-                {cons_html}
-            </div>
-            """)
+        fb = sf.get(section_key, {})
+        cons_html = "".join(f"<p>⚠️ {c}</p>" for c in fb.get("cons", []))
+        left_box = f'<div class="gf-card"><p style="color:#181A24; font-size:0.85rem; line-height:1.55; margin:0;">{highlight_matches(section_text, all_present)}</p></div>'
+        right_box = f"""
+        <div class="gf-card">
+            <p style="color:#8B90A0; font-size:0.75rem; margin-bottom:0.4rem;">NOT CLEARLY DEMONSTRATED FOR THIS ROLE</p>
+            {chips(all_missing, "missing", "Nothing missing 🎉")}
+            {cons_html}
+        </div>
+        """
+        # Both boxes render inside ONE grid so CSS can match their heights --
+        # two separate st.columns() calls can't do this, since each column
+        # sizes to its own content independently.
+        render(f"""
+        <p style="color:#8B90A0; font-size:0.78rem; margin:0.5rem 0 0.15rem; text-transform:uppercase; letter-spacing:0.04em;">{section_key.title()}</p>
+        <div class="gf-compare-grid">
+            {left_box}
+            {right_box}
+        </div>
+        """)
 
 # ============================================================================
 # Weak bullet fixer (auto-detected, no manual paste needed)
