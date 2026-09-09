@@ -20,6 +20,7 @@ _DEFAULTS = {
     "weak_bullet_rewrites": None,   # per-bullet quick suggestions (separate from the full rewrite below)
     "optimized_resume_text": None,  # full-resume rewrite that drives the Export "Modified" column
     "optimize_resume_error": None,  # persisted so it doesn't vanish on the next unrelated rerun
+    "optimize_status": None,        # always-set outcome summary (success/no-op/failure) for diagnosis
     "cover_letter_text": None,
     "cover_letter_cache_key": None,
     "salary_estimate": None,
